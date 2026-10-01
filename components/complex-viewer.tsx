@@ -197,7 +197,9 @@ export function ComplexViewer({
   onClose: () => void;
 }) {
   const [hostElement, setHostElement] = useState<HTMLDivElement | null>(null);
+  const [hoveredInteraction, setHoveredInteraction] = useState<{ pair: Interaction; x: number; y: number } | null>(null);
   const labelLayer = useRef<HTMLDivElement>(null),
+    stage = useRef<HTMLDivElement>(null),
     viewer = useRef<any>(null),
     camera = useRef<any>(null),
     lastScene = useRef('');
@@ -334,6 +336,24 @@ export function ComplexViewer({
     }
   }, [open, connection, cacheKey, native]);
   useEffect(() => {
+    const element = stage.current;
+    if (!open || !element) return;
+    const wheel = (event: WheelEvent) => {
+      // Capture above both the WebGL canvas and the HTML residue labels.
+      // Own the gesture so it cannot also scroll the containing dialog.
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      setHoveredInteraction(null);
+      const v = viewer.current;
+      if (!v) return;
+      const delta = event.deltaY * (event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? element.clientHeight : 1);
+      v.zoom(Math.exp(-Math.max(-200, Math.min(200, delta)) * 0.002));
+      v.render();
+    };
+    element.addEventListener('wheel', wheel, { capture: true, passive: false });
+    return () => element.removeEventListener('wheel', wheel, true);
+  }, [open, hostElement]);
+  useEffect(() => {
     if (!open) {
       camera.current = null;
       lastScene.current = '';
@@ -352,7 +372,7 @@ export function ComplexViewer({
         const v = D.createViewer(el, {
           backgroundColor: '#f5f8fc',
           antialias: true,
-          minimumZoomToDistance: 12,
+          minimumZoomToDistance: 6,
         });
         viewer.current = v;
         v.setDefaultCartoonQuality(10);
@@ -622,10 +642,34 @@ export function ComplexViewer({
       .map((a: any) => a.index);
     if (!indices.length) return;
     v.zoomTo({ model: 0, index: indices });
-    v.zoom(0.72);
+    v.zoom(1.5);
     if (clipping) v.setSlab(-depth / 2, depth / 2);
     v.render();
     setFocusedResidue(key);
+  }
+  function hoverInteraction(event: React.PointerEvent<HTMLDivElement>) {
+    const v = viewer.current;
+    const el = stage.current;
+    if (!v || !el || event.buttons || mode === 'ligand') { setHoveredInteraction(null); return; }
+    const box = el.getBoundingClientRect();
+    const x = event.clientX - box.left, y = event.clientY - box.top;
+    let nearest: Interaction | null = null, nearestDistance = 8;
+    const [tx, ty, tz, , qx, qy, qz, qw] = v.getView();
+    for (const pair of shown) {
+      if (clipping) {
+        const ax = (pair.a.x + pair.b.x) / 2 + tx, ay = (pair.a.y + pair.b.y) / 2 + ty, az = (pair.a.z + pair.b.z) / 2 + tz;
+        const z = 2 * (qx * qz - qy * qw) * ax + 2 * (qy * qz + qx * qw) * ay + (1 - 2 * (qx * qx + qy * qy)) * az;
+        if (Math.abs(z) > depth / 2) continue;
+      }
+      const a = v.modelToScreen(pair.a), b = v.modelToScreen(pair.b);
+      const ax = a.x - box.left - window.scrollX, ay = a.y - box.top - window.scrollY;
+      const bx = b.x - box.left - window.scrollX, by = b.y - box.top - window.scrollY;
+      const dx = bx - ax, dy = by - ay, length = dx * dx + dy * dy;
+      const t = length ? Math.max(0, Math.min(1, ((x - ax) * dx + (y - ay) * dy) / length)) : 0;
+      const distance = Math.hypot(x - ax - t * dx, y - ay - t * dy);
+      if (distance < nearestDistance) { nearest = pair; nearestDistance = distance; }
+    }
+    setHoveredInteraction(nearest ? { pair: nearest, x: Math.min(box.width - 240, Math.max(8, x + 12)), y: Math.max(8, y - 78) } : null);
   }
   async function saveImage() {
     if (!viewer.current || !hostElement) return;
@@ -647,11 +691,8 @@ export function ComplexViewer({
         const box = button.getBoundingClientRect(),
           x = box.left - bounds.left,
           y = box.top - bounds.top;
-        ctx.fillStyle = '#fffffff0';
-        ctx.fillRect(x, y, box.width, box.height);
-        ctx.strokeStyle = '#c6d7e3';
-        ctx.strokeRect(x, y, box.width, box.height);
-        ctx.font = `${Math.max(9, box.height * 0.58)}px sans-serif`;
+        ctx.globalAlpha = 0.8;
+        ctx.font = `bold ${Math.max(9, box.height * 0.58)}px sans-serif`;
         ctx.fillStyle = '#294255';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
@@ -722,9 +763,16 @@ export function ComplexViewer({
             保存图片
           </button>
         </div>
-        <div className="complex-stage">
+        <div className="complex-stage" ref={stage} onPointerMove={hoverInteraction} onPointerUp={hoverInteraction} onPointerLeave={() => setHoveredInteraction(null)} onPointerDown={() => setHoveredInteraction(null)}>
           <div className="complex-canvas" ref={setHostElement} />
           <div className="residue-label-layer" ref={labelLayer} />
+          {hoveredInteraction && shown.includes(hoveredInteraction.pair) && (
+            <div className="interaction-tooltip" role="tooltip" style={{ left: hoveredInteraction.x, top: hoveredInteraction.y }}>
+              <strong>{endpointResidue(hoveredInteraction.pair.a)} · {kinds[hoveredInteraction.pair.type]?.[0] || hoveredInteraction.pair.type}</strong>
+              <div>{hoveredInteraction.pair.a.label} → {hoveredInteraction.pair.b.label}</div>
+              <div>{hoveredInteraction.pair.distance.toFixed(2)} Å</div>
+            </div>
+          )}
         </div>
         <p className="micro" role="status">
           {focusedResidue

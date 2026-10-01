@@ -1733,6 +1733,7 @@ summary:focus-visible {
 }
 .complex-stage {
   position: relative;
+  overscroll-behavior: contain;
 }
 .residue-label-layer {
   position: absolute;
@@ -1743,25 +1744,43 @@ summary:focus-visible {
 .residue-tag {
   position: absolute;
   pointer-events: auto;
-  border: 1px solid #c6d7e3;
-  background: #fffffff0;
+  border: 0;
+  background: transparent;
+  opacity: 0.8;
   border-radius: 5px;
   color: #294255;
   padding: 2px 5px;
   font-size: 12px;
+  font-weight: 700;
   white-space: nowrap;
   cursor: pointer;
   transform-origin: center bottom;
 }
 .residue-tag:hover,
 .residue-tag:focus-visible {
-  background: #dceff8;
+  background: transparent;
+  color: #08718c;
+  text-decoration: underline;
+}
+.residue-tag:focus-visible {
   outline: 2px solid #2987a4;
 }
 .residue-chips {
   display: flex;
   gap: 6px;
   flex-wrap: wrap;
+}
+.interaction-tooltip {
+  position: absolute;
+  z-index: 2;
+  max-width: 240px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  color: #fff;
+  background: #203747f2;
+  font-size: 12px;
+  line-height: 1.5;
+  pointer-events: none;
 }
 .interaction-filter {
   margin: 8px 18px 16px;
