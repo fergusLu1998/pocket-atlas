@@ -36,6 +36,19 @@ export type Cluster = {
   size: number;
   members: number[];
 };
+export function compareLogP(
+  a: Pick<Mol, 'logp' | 'sourceRow'>,
+  b: Pick<Mol, 'logp' | 'sourceRow'>,
+  direction: 'asc' | 'desc',
+) {
+  const aValid = typeof a.logp === 'number' && Number.isFinite(a.logp);
+  const bValid = typeof b.logp === 'number' && Number.isFinite(b.logp);
+  if (aValid !== bValid) return aValid ? -1 : 1;
+  const difference = aValid && bValid ? a.logp - b.logp : 0;
+  return (
+    (direction === 'desc' ? -difference : difference) || a.sourceRow - b.sourceRow
+  );
+}
 export type Issue = { row: number; id: string; smiles: string; reason: string };
 export type Mapping = {
   id: string;

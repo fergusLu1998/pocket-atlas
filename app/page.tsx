@@ -96,6 +96,7 @@ import {
   Mapping,
   parseInput,
   makeRecords,
+  compareLogP,
   similarity,
   chooseCandidate,
   selectCandidatePage,
@@ -539,13 +540,15 @@ export default function Home() {
       .sort((a, b) =>
         sort === 'id'
           ? a.id.localeCompare(b.id, undefined, { numeric: true })
-          : sort === 'cluster'
-            ? a.cluster - b.cluster ||
-              Number(b.center) - Number(a.center) ||
-              a.sourceRow - b.sourceRow
-            : (a[sort as 'mmgbsa' | 'docking' | 'mw'] ?? Infinity) -
-                (b[sort as 'mmgbsa' | 'docking' | 'mw'] ?? Infinity) ||
-              a.sourceRow - b.sourceRow,
+          : sort === 'logp-asc' || sort === 'logp-desc'
+            ? compareLogP(a, b, sort === 'logp-desc' ? 'desc' : 'asc')
+            : sort === 'cluster'
+              ? a.cluster - b.cluster ||
+                Number(b.center) - Number(a.center) ||
+                a.sourceRow - b.sourceRow
+              : (a[sort as 'mmgbsa' | 'docking' | 'mw'] ?? Infinity) -
+                  (b[sort as 'mmgbsa' | 'docking' | 'mw'] ?? Infinity) ||
+                a.sourceRow - b.sourceRow,
       );
   }, [
     rows,
@@ -2240,6 +2243,8 @@ export default function Home() {
                   ['mmgbsa', 'MM/GBSA ↑'],
                   ['docking', 'Docking ↑'],
                   ['mw', '分子量 ↑'],
+                  ['logp-asc', 'cLogP 升序 ↑'],
+                  ['logp-desc', 'cLogP 降序 ↓'],
                   ['cluster', '结构簇'],
                   ['id', '化合物 ID'],
                 ]}

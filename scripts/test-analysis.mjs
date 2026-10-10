@@ -22,6 +22,19 @@ vm.runInNewContext(output, {
   console,
 });
 const lib = libModule.exports;
+// Include negative values, ties and legacy project records with absent descriptors.
+const logpRows = [2, null, -1.5, NaN, 2, undefined, Infinity, 0].map(
+  (logp, sourceRow) => ({ logp, sourceRow }),
+);
+assert.deepEqual(
+  [...logpRows].sort((a, b) => lib.compareLogP(a, b, 'asc')).map((r) => r.sourceRow),
+  [2, 7, 0, 4, 1, 3, 5, 6],
+);
+assert.deepEqual(
+  [...logpRows].sort((a, b) => lib.compareLogP(a, b, 'desc')).map((r) => r.sourceRow),
+  [0, 4, 7, 2, 1, 3, 5, 6],
+);
+assert.deepEqual(logpRows.map((r) => r.sourceRow), [0, 1, 2, 3, 4, 5, 6, 7]);
 const RDKit = await require('@rdkit/rdkit')();
 let result;
 const context = vm.createContext({
@@ -183,6 +196,7 @@ const summary = {
     'stereochemistry switch',
     'multi-fragment flag',
     'zero and missing scores',
+    'cLogP ascending and descending: negative values, ties, missing values last',
     'duplicate IDs',
     'CSV quoting and formula escaping',
     'TSV and SMI inputs',
