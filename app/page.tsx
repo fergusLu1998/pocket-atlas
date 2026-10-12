@@ -25,6 +25,7 @@ import {
   FlaskConical,
   AlertTriangle,
   FolderOpen,
+  Image as ImageIcon,
 } from 'lucide-react';
 import {
   Dialog,
@@ -104,6 +105,7 @@ import {
   csv,
   demo,
 } from '@/lib/chem';
+import { createStructureExport, downloadStructureBlob } from '@/lib/structure-export';
 
 const fmt = (v: number | null | undefined, d = 2) =>
   v === null || v === undefined ? '—' : v.toFixed(d);
@@ -265,6 +267,8 @@ export default function Home() {
     [methodsOpen, setMethodsOpen] = useState(false),
     [qualityOpen, setQualityOpen] = useState(false),
     [exportOpen, setExportOpen] = useState(false);
+  const [structureExporting, setStructureExporting] = useState(false);
+  const [structureExportStatus, setStructureExportStatus] = useState('');
   const [draft, setDraft] = useState(''),
     [draftName, setDraftName] = useState('我的化合物库'),
     [parsed, setParsed] = useState<Parsed | null>(null),
@@ -1269,6 +1273,20 @@ export default function Home() {
       csv(data),
       'text/csv;charset=utf-8',
     );
+  }
+  async function exportStructures(format: 'pdf' | 'png') {
+    const candidates = allRows.filter((r) => selectedSet.has(r.key));
+    setStructureExporting(true);
+    setStructureExportStatus('正在准备结构图…');
+    try {
+      const result = await createStructureExport(candidates, format, await getRDKit(),
+        (completed, total) => setStructureExportStatus(`正在生成结构图：${completed} / ${total} 页`));
+      const name = dataset.replace(/[\\/:*?"<>|\u0000-\u001f]/g, '_').slice(0, 80) || 'PocketAtlas';
+      downloadStructureBlob(`${isDemo ? 'DEMO_' : ''}${name}_候选结构_${candidates.length}.${result.extension}`, result.blob);
+      setStructureExportStatus(`已导出 ${candidates.length} 个候选 · ${result.pages} 页${result.extension === 'zip' ? ' PNG，已打包为 ZIP' : ''}`);
+    } catch (error) {
+      setStructureExportStatus(error instanceof Error ? error.message : '结构图导出失败，请重试。');
+    } finally { setStructureExporting(false); }
   }
   return (
     <>
@@ -2936,8 +2954,7 @@ export default function Home() {
           <DialogHeader>
             <DialogTitle>导出筛选结果</DialogTitle>
             <DialogDescription>
-              包括 ID、原始和规范
-              SMILES、评分、结构簇、供应商、货号、决策与备注；完整保留原始列。
+              CSV 保留完整分析数据；候选结构图仅包含结构式、ID、分子量和 MM/GBSA。
             </DialogDescription>
           </DialogHeader>
           {isDemo && (
@@ -2955,6 +2972,20 @@ export default function Home() {
             </div>
             <Download size={17} />
           </button>
+          <button className="export-option" disabled={!selected.length || busy || structureExporting}
+            onClick={() => exportStructures('pdf')}>
+            <FileText size={23} />
+            <div><b>候选结构图 · PDF</b><span>{selected.length} 个候选 · A4 自动分页 · 每页 12 个</span></div>
+            <Download size={17} />
+          </button>
+          <button className="export-option" disabled={!selected.length || busy || structureExporting}
+            onClick={() => exportStructures('png')}>
+            <ImageIcon size={23} />
+            <div><b>候选结构图 · PNG</b><span>2480 × 3508 像素 / 页 · 多页 PNG 打包为 ZIP</span></div>
+            <Download size={17} />
+          </button>
+          <p className="structure-export-note">包含所有已选候选，不受当前列表筛选或分页影响；缺失数值显示“—”。</p>
+          {structureExportStatus && <p className="structure-export-status" role="status" aria-live="polite">{structureExportStatus}</p>}
           <button
             className="export-option"
             disabled={!rows.length || busy}

@@ -33,7 +33,7 @@ The public website provides the application, not a shared research-project datab
 | **互作筛选**：指定残基、AND/OR、互作类型及“有／无／未确定”筛选；原生计算使用本机 Schrödinger。 | **Interaction filters:** target residues, AND/OR matching, interaction types, and present/absent/unknown results; native calculations use local Schrödinger. |
 | **初筛候选清单**：默认不限数量，可自定义上限；每页 20/50/100 条，全选或取消当前页，跨页保留选择。 | **Candidate shortlist:** unlimited by default, with an optional custom cap; 20/50/100 rows per page, page selection/deselection, and persistent selections across pages. |
 | **项目管理**：指定目录、启动检索、名称和备注确认、浏览及修改已有项目、关闭前保存确认。 | **Projects:** directory selection, startup discovery, name and note confirmation, opening/editing existing projects, and save prompts before closing. |
-| **保存与导出**：每 30 分钟自动保存、JSON 项目备份、候选和分析 CSV；项目文件与浏览器缓存分开。 | **Persistence and export:** autosave every 30 minutes, JSON project backups, candidate/analysis CSV exports, and separate project files and browser caches. |
+| **保存与导出**：每 30 分钟自动保存、JSON 项目备份、候选和分析 CSV、候选结构 PDF/PNG；项目文件与浏览器缓存分开。 | **Persistence and export:** autosave every 30 minutes, JSON project backups, candidate/analysis CSV exports, candidate structure PDF/PNG sheets, and separate project files and browser caches. |
 
 ## 3. 本地运行 / Run locally
 
@@ -81,6 +81,8 @@ The hosted workbench can re-detect an already running bridge at any time through
 5. **复核互作 / Review interactions.** 在三维视图检查姿态和口袋。多个指定残基可使用 AND（全部满足）或 OR（任一满足）；未计算的记录保持“未确定”。 / Inspect poses and pockets in 3D. Use AND for all specified residues or OR for any residue; uncomputed records remain “unknown.”
 6. **建立初筛清单 / Build the shortlist.** 单个或整页选择候选，添加备注，按需调整数量上限。 / Select individual molecules or a whole page, add notes, and adjust the candidate cap if needed.
 7. **保存与关闭 / Save and close.** 保存到项目目录，必要时下载 JSON 备份并导出 CSV。关闭标签时选择保存、放弃未保存更改或取消。 / Save to the project directory, download a JSON backup when needed, and export CSV. When closing a tab, choose to save, discard unsaved changes, or cancel.
+
+**候选结构图 / Candidate structure sheets.** 在“导出”中选择 PDF 或 PNG，导出整个初筛候选清单（包含当前筛选或分析范围外的已选分子）。每个分子仅显示二维结构、ID、分子量（g/mol）与 MM/GBSA（kcal/mol）；缺失值显示“—”，零分数正常保留。A4 每页 12 个分子；PNG 为 2480 × 3508 像素，多页时打包为 ZIP。 / In Export, choose PDF or PNG for the full candidate shortlist, including selected compounds outside the current filter or analysis scope. Each entry shows only its 2D structure, ID, molecular weight (g/mol), and MM/GBSA (kcal/mol); missing values use “—” and zero scores are preserved. A4 sheets contain 12 compounds per page. PNG sheets are 2480 × 3508 pixels and multiple sheets are bundled in a ZIP.
 
 ## 6. 项目文件与隐私 / Project files and privacy
 
