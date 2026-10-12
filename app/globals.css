@@ -577,6 +577,31 @@ svg {
 .selected-mark {
   color: #259270;
 }
+.scaffold-overview-btn { margin-left:auto;display:flex;align-items:center;gap:4px;color:#4c78af;font-size:12px;background:transparent;border:0;padding:3px; }
+.cluster-row-end { color:#4c78af; }
+.scaffold-dialog { max-width:min(1100px,calc(100vw - 32px))!important;max-height:90dvh;overflow-y:auto;padding:24px!important; }
+.scaffold-single { max-width:min(760px,calc(100vw - 32px))!important; }
+.scaffold-toolbar { display:flex;align-items:center;gap:10px;flex-wrap:wrap; }
+.scaffold-summaries { display:grid;gap:18px; }
+.scaffold-overview .scaffold-summaries { grid-template-columns:repeat(3,minmax(0,1fr));align-items:start; }
+.scaffold-cluster { border:1px solid #e1e9f5;border-radius:10px;padding:16px;min-width:0; }
+.scaffold-cluster-multiple { grid-column:1 / -1; }
+.scaffold-cluster-heading,.scaffold-card-heading { display:flex;justify-content:space-between;gap:12px;align-items:center; }
+.scaffold-cluster-heading b { color:#42638b; }
+.scaffold-cluster-heading span,.scaffold-card-heading span { color:#73869f;font-size:12px; }
+.scaffold-cards { display:grid;grid-template-columns:repeat(auto-fit,minmax(min(220px,100%),1fr));gap:14px;margin-top:12px; }
+.scaffold-card { border:1px solid #e5eaf0;border-radius:8px;padding:12px;background:#fff;min-width:0; }
+.scaffold-card-heading b { font-size:13px;color:#42638b; }
+.scaffold-card img { width:100%;height:200px;object-fit:contain; }
+.scaffold-rgroups { font-size:12px;color:#526575;margin-top:8px; }
+.scaffold-rgroups summary,.scaffold-method summary { cursor:pointer; }
+.scaffold-rgroups ul { list-style:none;padding:0;max-height:150px;overflow-y:auto; }
+.scaffold-rgroups li { display:flex;gap:8px;justify-content:space-between;margin:5px 0; }
+.scaffold-rgroups code { overflow-wrap:anywhere; }
+.scaffold-method { color:#73869f;font-size:12px;line-height:1.6; }
+.scaffold-error { color:#ad6244;font-size:13px; }
+@media(max-width:750px) { .scaffold-overview .scaffold-summaries { grid-template-columns:repeat(2,minmax(0,1fr)); } }
+@media(max-width:500px) { .scaffold-overview .scaffold-summaries { grid-template-columns:1fr; } }
 .chart-heading {
   align-items: center;
   padding: 18px;

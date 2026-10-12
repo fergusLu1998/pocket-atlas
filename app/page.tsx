@@ -106,6 +106,7 @@ import {
   demo,
 } from '@/lib/chem';
 import { createStructureExport, downloadStructureBlob } from '@/lib/structure-export';
+import { ClusterScaffoldDialog } from '@/components/cluster-scaffolds';
 
 const fmt = (v: number | null | undefined, d = 2) =>
   v === null || v === undefined ? '—' : v.toFixed(d);
@@ -272,6 +273,7 @@ export default function Home() {
     [exportOpen, setExportOpen] = useState(false);
   const [structureExporting, setStructureExporting] = useState(false);
   const [structureExportStatus, setStructureExportStatus] = useState('');
+  const [scaffoldPreview, setScaffoldPreview] = useState<number | 'all' | null>(null);
   const [draft, setDraft] = useState(''),
     [draftName, setDraftName] = useState('我的化合物库'),
     [parsed, setParsed] = useState<Parsed | null>(null),
@@ -1773,68 +1775,11 @@ export default function Home() {
                 </details>
               </div>
             </section>
-            <section className="panel">
-              <div className="panel-body">
-                <details>
-                  <summary>分组汇总 · {clusters.length} 组</summary>
-                  <p className="micro">
-                    {new Set(rows.map((r) => r.scaffold).filter(Boolean)).size}{' '}
-                    种唯一骨架 · {rows.filter((r) => !r.scaffold).length}{' '}
-                    条无环记录
-                  </p>
-                  <div style={{ maxHeight: 260, overflow: 'auto' }}>
-                    <table>
-                      <thead>
-                        <tr>
-                          <th>组</th>
-                          <th>分子</th>
-                          <th>骨架</th>
-                          <th>已选</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {clusters.map((c) => (
-                          <tr key={c.id}>
-                            <td>
-                              <button
-                                className="link-button"
-                                onClick={() => {
-                                  setClusterFilter(c.id);
-                                  setPage(0);
-                                }}
-                              >
-                                C{c.id}
-                              </button>
-                            </td>
-                            <td>{c.size}</td>
-                            <td>
-                              {
-                                new Set(
-                                  c.members
-                                    .map((i) => rows[i]?.scaffold)
-                                    .filter(Boolean),
-                                ).size
-                              }
-                            </td>
-                            <td>
-                              {
-                                c.members.filter((i) =>
-                                  selectedSet.has(rows[i]?.key),
-                                ).length
-                              }
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </details>
-              </div>
-            </section>
             <section className="panel cluster-panel">
               <div className="panel-head">
                 <h2>结构分组</h2>
                 <span className="count-badge">{clusters.length}</span>
+                <button className="scaffold-overview-btn" disabled={!clusters.length||busy} onClick={()=>setScaffoldPreview('all')}><Network size={13}/>骨架总览</button>
               </div>
               <div className="cluster-list">
                 <button
@@ -1866,7 +1811,9 @@ export default function Home() {
                         setPage(0);
                         setRegion(null);
                         setActive(rows[c.center].key);
+                        setScaffoldPreview(c.id);
                       }}
+                      title="查看该簇的共同骨架与 R 位点"
                     >
                       <span>
                         <i style={{ background: color(c.id) }} />
@@ -1875,7 +1822,7 @@ export default function Home() {
                           selectedSet.has(rows[i].key),
                         ) && <Check size={12} className="selected-mark" />}
                       </span>
-                      <b>{c.size}</b>
+                      <span className="cluster-row-end"><b>{c.size}</b><Network size={13}/></span>
                     </button>
                   ))}
               </div>
@@ -2957,6 +2904,7 @@ export default function Home() {
           </button>
         </DialogContent>
       </Dialog>
+      <ClusterScaffoldDialog rows={rows} clusters={clusters} openCluster={scaffoldPreview} onClose={()=>setScaffoldPreview(null)} dataset={dataset} isDemo={isDemo}/>
       <Dialog open={exportOpen} onOpenChange={setExportOpen}>
         <DialogContent className="export-dialog">
           <DialogHeader>
@@ -2994,6 +2942,9 @@ export default function Home() {
           </button>
           <p className="structure-export-note">包含所有已选候选，不受当前列表筛选或分页影响；缺失数值显示“—”。</p>
           {structureExportStatus && <p className="structure-export-status" role="status" aria-live="polite">{structureExportStatus}</p>}
+          <button className="export-option" disabled={!clusters.length||busy} onClick={()=>{setExportOpen(false);setScaffoldPreview('all');}}>
+            <Network size={23}/><div><b>簇骨架总览与导出</b><span>{clusters.length} 个当前分析簇 · R 位点骨架 · PNG / PDF</span></div><Download size={17}/>
+          </button>
           <button
             className="export-option"
             disabled={!rows.length || busy}

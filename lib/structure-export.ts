@@ -3,6 +3,7 @@ import type { jsPDF } from 'jspdf';
 import type { Mol } from './chem';
 
 type Candidate = Pick<Mol, 'key' | 'id' | 'smiles' | 'mw' | 'mmgbsa'>;
+export type ScaffoldSheetCard = { id: string; svg: string; lines: string[] };
 export const STRUCTURES_PER_PAGE = 12;
 const WIDTH = 1240,
   HEIGHT = 1754,
@@ -121,6 +122,88 @@ export async function createStructureExport(
   onProgress: (completed: number, total: number) => void = () => {},
 ) {
   if (!records.length) throw Error('请先勾选初筛候选分子。');
+  return createPagedExport(
+    records,
+    format,
+    (page) => drawPage(page, rdkit),
+    'candidates',
+    onProgress,
+  );
+}
+
+async function drawScaffoldPage(records: readonly ScaffoldSheetCard[]) {
+  const canvas = document.createElement('canvas');
+  canvas.width = WIDTH * SCALE;
+  canvas.height = HEIGHT * SCALE;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) throw Error('浏览器无法生成骨架图片。');
+  ctx.scale(SCALE, SCALE);
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(0, 0, WIDTH, HEIGHT);
+  for (let i = 0; i < records.length; i++) {
+    const record = records[i],
+      x = MARGIN + (i % 3) * (CARD_WIDTH + GAP),
+      y = MARGIN + Math.floor(i / 3) * (CARD_HEIGHT + GAP);
+    ctx.strokeStyle = '#dce2e6';
+    ctx.lineWidth = 0.7;
+    ctx.strokeRect(x, y, CARD_WIDTH, CARD_HEIGHT);
+    ctx.fillStyle = '#25323b';
+    const label = idLines(ctx, record.id);
+    label.lines.forEach((line, index) =>
+      ctx.fillText(line, x + 20, y + 28 + index * (label.size + 3)),
+    );
+    if (record.svg) {
+      const img = await svgImage(record.svg),
+        width = CARD_WIDTH - 32,
+        height = CARD_HEIGHT - 150;
+      const scale = Math.min(
+        width / img.naturalWidth,
+        height / img.naturalHeight,
+      );
+      ctx.drawImage(
+        img,
+        x + 16 + (width - img.naturalWidth * scale) / 2,
+        y + 70 + (height - img.naturalHeight * scale) / 2,
+        img.naturalWidth * scale,
+        img.naturalHeight * scale,
+      );
+    } else {
+      ctx.font = `16px ${FONT}`;
+      ctx.fillText('未生成共同骨架', x + 20, y + CARD_HEIGHT / 2);
+    }
+    ctx.font = `12px ${FONT}`;
+    ctx.fillStyle = '#526575';
+    record.lines
+      .slice(0, 3)
+      .forEach((line, index) =>
+        ctx.fillText(line, x + 20, y + CARD_HEIGHT - 56 + index * 20),
+      );
+  }
+  return canvas;
+}
+
+export function createScaffoldExport(
+  records: readonly ScaffoldSheetCard[],
+  format: 'pdf' | 'png',
+  onProgress: (completed: number, total: number) => void = () => {},
+) {
+  if (!records.length) throw Error('当前没有可导出的结构簇。');
+  return createPagedExport(
+    records,
+    format,
+    drawScaffoldPage,
+    'cluster_scaffolds',
+    onProgress,
+  );
+}
+
+async function createPagedExport<T>(
+  records: readonly T[],
+  format: 'pdf' | 'png',
+  renderPage: (records: readonly T[]) => Promise<HTMLCanvasElement>,
+  prefix: string,
+  onProgress: (completed: number, total: number) => void,
+) {
   const pages = structurePages(records);
   onProgress(0, pages.length);
   await document.fonts.ready;
@@ -142,7 +225,7 @@ export async function createStructureExport(
   }
   let singlePng: Blob | undefined;
   for (let page = 0; page < pages.length; page++) {
-    const canvas = await drawPage(pages[page], rdkit);
+    const canvas = await renderPage(pages[page]);
     try {
       if (pdf) {
         if (page) pdf.addPage();
@@ -164,7 +247,7 @@ export async function createStructureExport(
         );
         if (zip && zipFile) {
           const file = new zipFile(
-            `candidates_${String(page + 1).padStart(3, '0')}.png`,
+            `${prefix}_${String(page + 1).padStart(3, '0')}.png`,
           );
           zip.add(file);
           file.push(new Uint8Array(await blob.arrayBuffer()), true);

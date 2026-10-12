@@ -11,7 +11,7 @@
     "start": "wrangler dev --config dist/server/wrangler.json",
     "lint": "oxlint",
     "format": "oxfmt",
-    "test": "node scripts/test-analysis.mjs && node scripts/test-project-directory.mjs && node scripts/test-structure-export.mjs",
+    "test": "node scripts/test-analysis.mjs && node scripts/test-project-directory.mjs && node scripts/test-structure-export.mjs && node scripts/test-cluster-scaffolds.mjs",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
