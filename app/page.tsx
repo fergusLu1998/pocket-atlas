@@ -176,6 +176,13 @@ type Retention = {
   limit: number;
   rank: 'mmgbsa' | 'docking' | 'source';
 } | null;
+const DEFAULT_CLUSTERING = {
+  threshold: 0.6,
+  chirality: false,
+  radius: 2,
+  nBits: 2048,
+  basis: 'murcko',
+};
 export default function Home() {
   const [projectId, setProjectId] = useState('project-' + Date.now()),
     [projects, setProjects] = useState<StoredProject[]>([]),
@@ -232,7 +239,7 @@ export default function Home() {
     [receptors, setReceptors] = useState<Structure[]>([]),
     [receptorIndex, setReceptorIndex] = useState(0),
     [viewPose, setViewPose] = useState<Structure | null>(null);
-  const [basis, setBasis] = useState('molecule');
+  const [basis, setBasis] = useState(DEFAULT_CLUSTERING.basis);
   const [retainCount, setRetainCount] = useState('500'),
     [retainRank, setRetainRank] = useState<'mmgbsa' | 'docking' | 'source'>(
       'mmgbsa',
@@ -244,16 +251,12 @@ export default function Home() {
     [batchProgress, setBatchProgress] = useState(''),
     [batchBusy, setBatchBusy] = useState(false);
   const batchStop = useRef(false);
-  const [radius, setRadius] = useState(2),
-    [nBits, setNBits] = useState(2048);
-  const [threshold, setThreshold] = useState(0.6),
+  const [radius, setRadius] = useState(DEFAULT_CLUSTERING.radius),
+    [nBits, setNBits] = useState(DEFAULT_CLUSTERING.nBits);
+  const [threshold, setThreshold] = useState(DEFAULT_CLUSTERING.threshold),
     [chirality, setChirality] = useState(false),
     [applied, setApplied] = useState({
-      threshold: 0.6,
-      chirality: false,
-      radius: 2,
-      nBits: 2048,
-      basis: 'molecule',
+      ...DEFAULT_CLUSTERING,
       retention: null as Retention,
     }),
     [version, setVersion] = useState('');
@@ -494,13 +497,7 @@ export default function Home() {
         made = makeRecords(p, p.mapping);
       run(
         made.records,
-        {
-          threshold: 0.6,
-          chirality: false,
-          radius: 2,
-          nBits: 2048,
-          basis: 'molecule',
-        },
+        DEFAULT_CLUSTERING,
         {
           text: demo,
           map: p.mapping,
@@ -908,7 +905,7 @@ export default function Home() {
       setReceptorIndex(0);
       run(
         made.records,
-        { threshold, chirality, radius, nBits, basis },
+        resetClusteringDefaults(),
         {
           text: textCSV,
           map: p.mapping,
@@ -931,7 +928,7 @@ export default function Home() {
       setReceptors([]);
       run(
         made.records,
-        { threshold, chirality, radius, nBits, basis },
+        resetClusteringDefaults(),
         {
           text: draft,
           map: draftMap,
@@ -1073,7 +1070,7 @@ export default function Home() {
       setBasis(
         ['molecule', 'murcko', 'generic'].includes(p.basis)
           ? p.basis
-          : 'molecule',
+          : DEFAULT_CLUSTERING.basis,
       );
       setRadius([1, 2, 3, 4].includes(p.radius) ? p.radius : 2);
       setNBits([1024, 2048, 4096].includes(p.nBits) ? p.nBits : 2048);
@@ -1087,7 +1084,7 @@ export default function Home() {
           nBits: [1024, 2048, 4096].includes(p.nBits) ? p.nBits : 2048,
           basis: ['molecule', 'murcko', 'generic'].includes(p.basis)
             ? p.basis
-            : 'molecule',
+            : DEFAULT_CLUSTERING.basis,
         },
         {
           text: p.raw,
@@ -1139,6 +1136,15 @@ export default function Home() {
     localStorage.setItem('pocket-atlas-active-project', stored.id);
   }
 
+  function resetClusteringDefaults() {
+    setThreshold(DEFAULT_CLUSTERING.threshold);
+    setBasis(DEFAULT_CLUSTERING.basis);
+    setRadius(DEFAULT_CLUSTERING.radius);
+    setNBits(DEFAULT_CLUSTERING.nBits);
+    setChirality(DEFAULT_CLUSTERING.chirality);
+    setApplied({ ...DEFAULT_CLUSTERING, retention: null });
+    return DEFAULT_CLUSTERING;
+  }
   async function newProject() {
     if (batchBusy) {
       setMessage('请先停止互作批量计算，再新建项目。');
@@ -1170,6 +1176,7 @@ export default function Home() {
     setActive(null);
     setLastSavedAt(null);
     setHasUnsaved(false);
+    resetClusteringDefaults();
     setImportOpen(true);
     window.setTimeout(() => {
       suppressDirty.current = false;
@@ -1182,6 +1189,7 @@ export default function Home() {
     setRows([]); setAllRows([]); setRecords([]); setClusters([]); setIssues([]); setWarnings([]);
     setSelected([]); setExcluded([]); setNotes({}); setPoses({}); setReceptors([]); setInteractionCache({});
     setActive(null); setLastSavedAt(null); setHasUnsaved(false); setCreatingProject(false); setMetadataOpen(false);
+    resetClusteringDefaults();
     window.setTimeout(() => { suppressDirty.current = false; }, 500);
   }
   async function changeDirectory() {
@@ -3029,8 +3037,8 @@ export default function Home() {
             </p>
             <h3>2. 按结构相似性分组</h3>
             <p>
-              Morgan 二进制指纹，半径与位数可调，默认 radius = 2、2048
-              位；默认不考虑手性，可打开手性选项。Tanimoto = 共有置位数 /
+              新项目默认使用 Murcko 骨架、Tanimoto ≥ 0.60、Morgan 半径 2、2048
+              位指纹；参数可调整，已有项目按其保存设置恢复。默认不考虑手性，可打开手性选项。Tanimoto = 共有置位数 /
               合并置位数。Butina
               每轮选未分配邻居最多的分子作为中心，成员与中心满足 Tanimoto ≥
               阈值；同簇任意两成员不一定达到该阈值。平局按原始输入行序确定中心。0.60

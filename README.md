@@ -37,6 +37,8 @@ The public website provides the application, not a shared research-project datab
 
 ## 3. 本地运行 / Run locally
 
+**默认聚类参数 / Default clustering parameters:** 新项目使用 **Tanimoto ≥ 0.60、Murcko 骨架、Morgan 半径 2、2048 位指纹**；仍可手动调整，已有项目按保存的设置恢复。 / New projects use **Tanimoto ≥ 0.60, Murcko scaffolds, Morgan radius 2, and 2048-bit fingerprints**. Parameters remain adjustable; existing projects restore their saved settings.
+
 需要 **Node.js 22.13+**、npm 和 Git。 / Requires **Node.js 22.13+**, npm, and Git.
 
 ```powershell
