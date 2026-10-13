@@ -64,12 +64,15 @@
       clusters.push({ id, center, size: members.length, members });
     }
     progress(83, '生成化学空间投影');
-    const coords = Array.from({ length: n }, () => [0, 0]);
-    for (let axis = 0; axis < 2; axis++) {
+    const coords = Array.from({ length: n }, () => [0, 0, 0]);
+    for (let axis = 0; axis < 3; axis++) {
       const residual = (a, b) =>
         Math.max(
           0,
-          d(a, b) ** 2 - (axis ? (coords[a][0] - coords[b][0]) ** 2 : 0),
+          d(a, b) ** 2 -
+            coords[a]
+              .slice(0, axis)
+              .reduce((sum, v, k) => sum + (v - coords[b][k]) ** 2, 0),
         );
       let a = 0,
         b = 0;
@@ -93,6 +96,7 @@
     rows.forEach((row, i) => {
       row.x = coords[i][0];
       row.y = coords[i][1];
+      row.z = coords[i][2];
     });
     return clusters;
   }

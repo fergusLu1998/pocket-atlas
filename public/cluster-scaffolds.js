@@ -95,7 +95,7 @@
           a - b,
       );
     const result = [g.atoms.map((_, i) => i)],
-      map = new Array(n).fill(-1),
+      map = Array.from({ length: n }, () => -1),
       used = new Set();
     let visits = 0,
       limited = false;
@@ -318,7 +318,7 @@
             ...parts.map((p) => p.signature),
             ...Array(max - parts.length).fill('H'),
           ]
-            .sort()
+            .sort((a, b) => (a < b ? -1 : a > b ? 1 : 0))
             .join(' + ');
           values.set(text, (values.get(text) || 0) + 1);
         });

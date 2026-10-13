@@ -627,6 +627,18 @@ svg {
   display: block;
   cursor: crosshair;
 }
+.scatter-controls { display:flex; flex-wrap:wrap; gap:8px; align-items:center; padding:8px 16px; font-size:12px; }
+.scatter-controls label { display:flex; align-items:center; gap:6px; }
+.scatter-controls select,.scatter-controls button { border:1px solid #d8e4f0; border-radius:5px; padding:6px; background:white; color:#425b74; }
+.scatter-hit-list { position:absolute; left:60px; top:42px; max-height:280px; width:min(340px,75%); overflow:auto; background:#fffffff5; border:1px solid #c5d4e4; border-radius:8px; box-shadow:0 4px 18px #192f4820; padding:8px; z-index:3; }
+.scatter-hit-list>div { display:flex; justify-content:space-between; align-items:center; gap:8px; font-size:12px; }
+.scatter-hit-list button { padding:6px 8px; border:0; background:transparent; text-align:left; color:#263e5b; }
+.scatter-hit-list>button { width:100%; display:flex; flex-direction:column; border-top:1px solid #edf1f6; }
+.scatter-hit-list button.active,.scatter-hit-list button:hover { background:#edf5ff; }
+.scatter-hit-list small { color:#708198; }
+.scatter-cluster-legend { display:flex; flex-wrap:wrap; gap:6px; padding:0 16px 12px; max-height:110px; overflow:auto; }
+.scatter-cluster-legend button { display:flex; align-items:center; gap:4px; border:1px solid #e5ebf3; background:white; border-radius:4px; font-size:11px; padding:4px 6px; }
+.scatter-cluster-legend i { width:8px; height:8px; border-radius:50%; }
 .plot-tools {
   position: absolute;
   right: 8px;

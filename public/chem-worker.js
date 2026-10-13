@@ -103,6 +103,7 @@ onmessage = async function (event) {
             cluster: r.cluster,
             x: r.x,
             y: r.y,
+            z: r.z,
             centerSimilarity: r.centerSimilarity,
             center: r.center && j === members[i][0],
           }),

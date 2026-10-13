@@ -1,5 +1,13 @@
+/* oxlint-disable no-control-regex -- Control characters are intentionally removed from exported filenames. */
 'use client';
-import { useState, useMemo, useRef, useEffect, useCallback } from 'react';
+import {
+  useState,
+  useMemo,
+  useRef,
+  useEffect,
+  useCallback,
+  useEffectEvent,
+} from 'react';
 import {
   Atom,
   Upload,
@@ -74,7 +82,7 @@ import {
   calculateInteractions,
 } from '@/lib/local-engine';
 import {
-  interactionKey,
+  interactionKey as resultKey,
   residueKey,
   residueInteractionState,
   interactionKinds,
@@ -86,7 +94,13 @@ import {
   listProjects,
   putProject,
 } from '@/lib/project-store';
-import { restoreDirectory, chooseDirectory, directoryName, directoryPermission, scanProjects } from '@/lib/project-directory';
+import {
+  restoreDirectory,
+  chooseDirectory,
+  directoryName,
+  directoryPermission,
+  scanProjects,
+} from '@/lib/project-directory';
 import { getRDKit, Molecule, Scatter, color } from '@/components/chem-views';
 import {
   Mol,
@@ -105,7 +119,10 @@ import {
   csv,
   demo,
 } from '@/lib/chem';
-import { createStructureExport, downloadStructureBlob } from '@/lib/structure-export';
+import {
+  createStructureExport,
+  downloadStructureBlob,
+} from '@/lib/structure-export';
 import { ClusterScaffoldDialog } from '@/components/cluster-scaffolds';
 
 const fmt = (v: number | null | undefined, d = 2) =>
@@ -153,7 +170,11 @@ function Choice({
       value={value || '__none'}
       onValueChange={(v) => onChange(v === '__none' ? '' : String(v))}
     >
-      <SelectTrigger aria-label={label} className="choice">
+      <SelectTrigger
+        id={'choice-' + label}
+        aria-label={label}
+        className="choice"
+      >
         <SelectValue>
           {options.find(([v]) => v === (value || '__none'))?.[1] || label}
         </SelectValue>
@@ -273,7 +294,9 @@ export default function Home() {
     [exportOpen, setExportOpen] = useState(false);
   const [structureExporting, setStructureExporting] = useState(false);
   const [structureExportStatus, setStructureExportStatus] = useState('');
-  const [scaffoldPreview, setScaffoldPreview] = useState<number | 'all' | null>(null);
+  const [scaffoldPreview, setScaffoldPreview] = useState<number | 'all' | null>(
+    null,
+  );
   const [draft, setDraft] = useState(''),
     [draftName, setDraftName] = useState('我的化合物库'),
     [parsed, setParsed] = useState<Parsed | null>(null),
@@ -286,7 +309,17 @@ export default function Home() {
     [maxGBSA, setMaxGBSA] = useState(''),
     [region, setRegion] = useState<string[] | null>(null),
     [page, setPage] = useState(0),
-    [chart, setChart] = useState<'map' | 'scores'>('map');
+    [chart, setChart] = useState<'map' | 'scores' | 'clusters'>('map');
+  const [interactionMethod, setInteractionMethod] = useState<'open' | 'native'>(
+    'open',
+  );
+  const interactionKey = useCallback(
+    (
+      protein: Structure | null | undefined,
+      ligand: Structure | null | undefined,
+    ) => resultKey(protein, ligand, interactionMethod),
+    [interactionMethod],
+  );
   const [pageSize, setPageSize] = useState(20);
   const [candidateLimit, setCandidateLimit] = useState<number | null>(null);
   const projectFile = useRef<HTMLInputElement>(null);
@@ -295,7 +328,8 @@ export default function Home() {
     try {
       if (directoryName()) {
         const result = await scanProjects();
-        setProjects(result.entries); setDirectoryWarnings(result.warnings);
+        setProjects(result.entries);
+        setDirectoryWarnings(result.warnings);
         setDirectoryStatus('已检索 ' + result.entries.length + ' 个项目文件');
       } else setProjects(await listProjects());
     } catch (e) {
@@ -308,7 +342,8 @@ export default function Home() {
       const c = await discoverLocalEngine();
       setConnection((old) => (old?.token === c.token ? old : c));
       setEngineStatus('Schrödinger 已自动连接');
-      if (notify) setMessage('已检索到本机 Schrödinger，原生结构与互作分析已启用。');
+      if (notify)
+        setMessage('已检索到本机 Schrödinger，原生结构与互作分析已启用。');
       return true;
     } catch {
       setConnection(null);
@@ -323,8 +358,12 @@ export default function Home() {
 
   useEffect(() => {
     void (async () => {
-      try { setDirectoryLabel(await restoreDirectory()); await refreshProjects(); }
-      catch (e) { setDirectoryStatus((e as Error).message); }
+      try {
+        setDirectoryLabel(await restoreDirectory());
+        await refreshProjects();
+      } catch (e) {
+        setDirectoryStatus((e as Error).message);
+      }
     })();
     let checking = false,
       alive = true;
@@ -375,12 +414,15 @@ export default function Home() {
     receptors,
     receptorIndex,
     interactionCache,
+    interactionMethod,
   ]);
 
   useEffect(() => {
     const guard = (event: BeforeUnloadEvent) => {
       if (!hasUnsaved) return;
       event.preventDefault();
+      // Retained for browsers that require returnValue for the leave-page prompt.
+      // oxlint-disable-next-line typescript/no-deprecated
       event.returnValue = '';
     };
     window.addEventListener('beforeunload', guard);
@@ -442,10 +484,14 @@ export default function Home() {
           setWorkspaceEmpty(false);
           if (!context.demo && !context.restore && results.length) {
             setProjectId('project-' + crypto.randomUUID());
-            setProjectNotes(''); setInteractionCache({});
-            setLastSavedAt(null); setHasUnsaved(true);
-            setMetadataName(context.name); setMetadataNotes('');
-            setCreatingProject(true); setMetadataOpen(true);
+            setProjectNotes('');
+            setInteractionCache({});
+            setLastSavedAt(null);
+            setHasUnsaved(true);
+            setMetadataName(context.name);
+            setMetadataNotes('');
+            setCreatingProject(true);
+            setMetadataOpen(true);
           }
           setIsDemo(context.demo);
           setWarnings(context.warnings);
@@ -457,7 +503,7 @@ export default function Home() {
           const canonical = new Set<string>();
           for (const key of context.restore?.selected || []) {
             const r = complete.find((r) => r.key === key);
-            if (r && !canonical.has(r.canonical) ) {
+            if (r && !canonical.has(r.canonical)) {
               keep.push(key);
               canonical.add(r.canonical);
             }
@@ -497,17 +543,13 @@ export default function Home() {
       initializedDemo.current = true;
       const p = parseInput(demo),
         made = makeRecords(p, p.mapping);
-      run(
-        made.records,
-        DEFAULT_CLUSTERING,
-        {
-          text: demo,
-          map: p.mapping,
-          name: '演示化合物库',
-          demo: true,
-          warnings: made.warnings,
-        },
-      );
+      run(made.records, DEFAULT_CLUSTERING, {
+        text: demo,
+        map: p.mapping,
+        name: '演示化合物库',
+        demo: true,
+        warnings: made.warnings,
+      });
     }, 0);
     return () => {
       clearTimeout(timer);
@@ -594,6 +636,7 @@ export default function Home() {
     [
       rows,
       interactionCache,
+      interactionKey,
       receptors,
       receptorIndex,
       poses,
@@ -621,13 +664,20 @@ export default function Home() {
   );
   async function batchInteractions() {
     const receptor = receptors[receptorIndex];
-    if (!connection || !receptor || batchBusy) return;
+    if (
+      !receptor ||
+      batchBusy ||
+      (interactionMethod === 'native' && !connection)
+    )
+      return;
     const pending = baseFiltered.filter(
       (r) =>
-        poses[r.key]?.nativeId &&
+        poses[r.key]?.atoms.length &&
+        (interactionMethod === 'open' || poses[r.key]?.nativeId) &&
         (!interactionCache[interactionKey(receptor, poses[r.key])] ||
-          interactionCache[interactionKey(receptor, poses[r.key])].errors
-            .length),
+          (interactionMethod === 'native' &&
+            interactionCache[interactionKey(receptor, poses[r.key])].errors
+              .length)),
     );
     batchStop.current = false;
     setBatchBusy(true);
@@ -638,7 +688,7 @@ export default function Home() {
       if (batchStop.current) break;
       try {
         const result = await calculateInteractions(
-          connection,
+          interactionMethod === 'open' ? null : connection,
           receptor,
           poses[row.key],
         );
@@ -712,7 +762,12 @@ export default function Home() {
   }
   function toggle(r: Mol) {
     if (busy) return;
-    const result = chooseCandidate(selected, r, allRows, candidateLimit ?? Infinity);
+    const result = chooseCandidate(
+      selected,
+      r,
+      allRows,
+      candidateLimit ?? Infinity,
+    );
     if (result.error) {
       setMessage(result.error);
       return;
@@ -722,10 +777,24 @@ export default function Home() {
   }
   function togglePage(checked: boolean) {
     if (busy) return;
-    const result = selectCandidatePage(selected, shown, allRows, checked, candidateLimit ?? Infinity);
+    const result = selectCandidatePage(
+      selected,
+      shown,
+      allRows,
+      checked,
+      candidateLimit ?? Infinity,
+    );
     setSelected(result.selected);
-    if (checked) setExcluded((keys) => keys.filter((key) => !result.selected.includes(key)));
-    if (result.skipped) setMessage('已保留可加入的候选；跳过 ' + result.skipped + ' 条（相同规范结构已入选，或达到自定义上限）。');
+    if (checked)
+      setExcluded((keys) =>
+        keys.filter((key) => !result.selected.includes(key)),
+      );
+    if (result.skipped)
+      setMessage(
+        '已保留可加入的候选；跳过 ' +
+          result.skipped +
+          ' 条（相同规范结构已入选，或达到自定义上限）。',
+      );
   }
   function analyzeRange(restoreAll = false) {
     const limit = Number(retainCount);
@@ -829,7 +898,8 @@ export default function Home() {
     }
   }
   async function loadStructureData(file: File) {
-    if (hasUnsaved && !isDemo && rows.length && !(await saveToWorkspace(true))) return;
+    if (hasUnsaved && !isDemo && rows.length && !(await saveToWorkspace(true)))
+      return;
     setBusy(true);
     setStage('读取结构与原始坐标');
     setProgress(3);
@@ -905,40 +975,33 @@ export default function Home() {
       setPoses(poseMap);
       setReceptors(proteins);
       setReceptorIndex(0);
-      run(
-        made.records,
-        resetClusteringDefaults(),
-        {
-          text: textCSV,
-          map: p.mapping,
-          name: file.name,
-          demo: false,
-          warnings: [...made.warnings, ...warnings],
-        },
-      );
+      run(made.records, resetClusteringDefaults(), {
+        text: textCSV,
+        map: p.mapping,
+        name: file.name,
+        demo: false,
+        warnings: [...made.warnings, ...warnings],
+      });
     } catch (e) {
       setBusy(false);
       setMessage((e as Error).message);
     }
   }
   async function importData() {
-    if (hasUnsaved && !isDemo && rows.length && !(await saveToWorkspace(true))) return;
+    if (hasUnsaved && !isDemo && rows.length && !(await saveToWorkspace(true)))
+      return;
     try {
       if (!parsed || !draftMap) throw Error('请先解析数据并指定 SMILES 列。');
       const made = makeRecords(parsed, draftMap);
       setPoses({});
       setReceptors([]);
-      run(
-        made.records,
-        resetClusteringDefaults(),
-        {
-          text: draft,
-          map: draftMap,
-          name: draftName || '我的化合物库',
-          demo: false,
-          warnings: made.warnings,
-        },
-      );
+      run(made.records, resetClusteringDefaults(), {
+        text: draft,
+        map: draftMap,
+        name: draftName || '我的化合物库',
+        demo: false,
+        warnings: made.warnings,
+      });
     } catch (e) {
       setMessage((e as Error).message);
     }
@@ -955,6 +1018,7 @@ export default function Home() {
       ...applied,
       poses,
       interactionCache,
+      interactionMethod,
       receptors,
       receptorIndex,
       selected,
@@ -989,17 +1053,32 @@ export default function Home() {
       if (savedVersion === dirtyVersion.current) setHasUnsaved(false);
       localStorage.setItem('pocket-atlas-active-project', stored.id);
       await refreshProjects();
-      if (!silent) setMessage(directoryName() ? '项目已写入所选目录。' : '项目已保存到浏览器本机存储；可指定项目目录保存为文件。');
+      if (!silent)
+        setMessage(
+          directoryName()
+            ? '项目已写入所选目录。'
+            : '项目已保存到浏览器本机存储；可指定项目目录保存为文件。',
+        );
       return true;
     } catch (e) {
       setMessage('项目保存失败：' + (e as Error).message);
       return false;
-    } finally { saveLock.current = false; }
+    } finally {
+      saveLock.current = false;
+    }
   }
 
   const autosave = useRef(() => {});
   autosave.current = () => {
-    if (hasUnsaved && !isDemo && rows.length && !busy && !metadataOpen && !closeTarget) void saveToWorkspace(true);
+    if (
+      hasUnsaved &&
+      !isDemo &&
+      rows.length &&
+      !busy &&
+      !metadataOpen &&
+      !closeTarget
+    )
+      void saveToWorkspace(true);
   };
   useEffect(() => {
     const timer = window.setInterval(
@@ -1046,11 +1125,19 @@ export default function Home() {
       setProjectNotes(typeof p.projectNotes === 'string' ? p.projectNotes : '');
       setWorkspaceEmpty(false);
       setClosedIds((ids) => ids.filter((key) => key !== id));
-      if (id) { setProjectId(id); setOpenIds((ids) => Array.from(new Set([...ids, id]))); }
-      setCandidateLimit(Number.isSafeInteger(p.candidateLimit) && p.candidateLimit > 0 ? p.candidateLimit : null);
+      if (id) {
+        setProjectId(id);
+        setOpenIds((ids) => Array.from(new Set([...ids, id])));
+      }
+      setCandidateLimit(
+        Number.isSafeInteger(p.candidateLimit) && p.candidateLimit > 0
+          ? p.candidateLimit
+          : null,
+      );
       setPageSize([20, 50, 100].includes(p.pageSize) ? p.pageSize : 20);
       setPoses(p.poses || {});
       setInteractionCache(p.interactionCache || {});
+      setInteractionMethod(p.interactionMethod === 'open' ? 'open' : 'native');
       setReceptors(p.receptors || []);
       setReceptorIndex(Number(p.receptorIndex) || 0);
       resetFilters();
@@ -1112,7 +1199,8 @@ export default function Home() {
       setMessage('请先停止互作批量计算，再打开项目。');
       return;
     }
-    if (hasUnsaved && !isDemo && rows.length && !(await saveToWorkspace(true))) return;
+    if (hasUnsaved && !isDemo && rows.length && !(await saveToWorkspace(true)))
+      return;
     if (file.size > 600 * 1024 * 1024) {
       setMessage('项目载入失败：项目文件过大');
       return;
@@ -1129,7 +1217,10 @@ export default function Home() {
   async function switchProject(id: string) {
     if (id === projectId || busy || batchBusy) return;
     if (hasUnsaved && !isDemo && !(await saveToWorkspace(true))) return;
-    const stored = await getProject(id).catch((e) => { setMessage((e as Error).message); return undefined; });
+    const stored = await getProject(id).catch((e) => {
+      setMessage((e as Error).message);
+      return undefined;
+    });
     if (!stored) {
       setMessage('未找到该本机项目。');
       return;
@@ -1186,48 +1277,105 @@ export default function Home() {
   }
   function clearWorkspace() {
     suppressDirty.current = true;
-    setWorkspaceEmpty(true); setProjectId('project-' + crypto.randomUUID());
-    setDataset('未打开项目'); setProjectNotes(''); setRaw('');
-    setRows([]); setAllRows([]); setRecords([]); setClusters([]); setIssues([]); setWarnings([]);
-    setSelected([]); setExcluded([]); setNotes({}); setPoses({}); setReceptors([]); setInteractionCache({});
-    setActive(null); setLastSavedAt(null); setHasUnsaved(false); setCreatingProject(false); setMetadataOpen(false);
+    setWorkspaceEmpty(true);
+    setProjectId('project-' + crypto.randomUUID());
+    setDataset('未打开项目');
+    setProjectNotes('');
+    setRaw('');
+    setRows([]);
+    setAllRows([]);
+    setRecords([]);
+    setClusters([]);
+    setIssues([]);
+    setWarnings([]);
+    setSelected([]);
+    setExcluded([]);
+    setNotes({});
+    setPoses({});
+    setReceptors([]);
+    setInteractionCache({});
+    setActive(null);
+    setLastSavedAt(null);
+    setHasUnsaved(false);
+    setCreatingProject(false);
+    setMetadataOpen(false);
     resetClusteringDefaults();
-    window.setTimeout(() => { suppressDirty.current = false; }, 500);
+    window.setTimeout(() => {
+      suppressDirty.current = false;
+    }, 500);
   }
   async function changeDirectory() {
     if (busy || batchBusy || directoryBusy) return;
-    if (hasUnsaved && !isDemo && rows.length) { setMessage('请先保存当前项目，再更换项目目录。'); return; }
+    if (hasUnsaved && !isDemo && rows.length) {
+      setMessage('请先保存当前项目，再更换项目目录。');
+      return;
+    }
     setDirectoryBusy(true);
-    try { const name = await chooseDirectory(); setDirectoryLabel(name); setClosedIds([]); setOpenIds([]); await refreshProjects();
-      if (rows.length && !isDemo) { setProjectId('project-' + crypto.randomUUID()); setPendingMetadataSave(true); }
-      else clearWorkspace(); }
-    catch (e) { if ((e as Error).name !== 'AbortError') setMessage((e as Error).message); }
-    finally { setDirectoryBusy(false); }
+    try {
+      const name = await chooseDirectory();
+      setDirectoryLabel(name);
+      setClosedIds([]);
+      setOpenIds([]);
+      await refreshProjects();
+      if (rows.length && !isDemo) {
+        setProjectId('project-' + crypto.randomUUID());
+        setPendingMetadataSave(true);
+      } else clearWorkspace();
+    } catch (e) {
+      if ((e as Error).name !== 'AbortError') setMessage((e as Error).message);
+    } finally {
+      setDirectoryBusy(false);
+    }
   }
   async function rescanDirectory() {
     setDirectoryBusy(true);
     try {
-      if (directoryName() && !(await directoryPermission(true))) throw Error('未获得目录读写授权。');
+      if (directoryName() && !(await directoryPermission(true)))
+        throw Error('未获得目录读写授权。');
       await refreshProjects();
-    } catch (e) { setMessage((e as Error).message); }
-    finally { setDirectoryBusy(false); }
+    } catch (e) {
+      setMessage((e as Error).message);
+    } finally {
+      setDirectoryBusy(false);
+    }
   }
   async function finishClose(save: boolean) {
     if (!closeTarget || busy || batchBusy) return;
     const target = closeTarget;
-    if (save && target === projectId && rows.length && !(await saveToWorkspace(true))) return;
-    setClosedIds((ids) => [...ids, target, ...(save && target === projectId ? [savedProjectId.current] : [])]);
+    if (
+      save &&
+      target === projectId &&
+      rows.length &&
+      !(await saveToWorkspace(true))
+    )
+      return;
+    setClosedIds((ids) => [
+      ...ids,
+      target,
+      ...(save && target === projectId ? [savedProjectId.current] : []),
+    ]);
     if (target === projectId) clearWorkspace();
     setCloseTarget(null);
   }
+  const savePendingMetadata = useEffectEvent(saveToWorkspace);
   useEffect(() => {
     if (!pendingMetadataSave || busy) return;
     setPendingMetadataSave(false);
-    void saveToWorkspace().then((ok) => { if (ok) { setMetadataOpen(false); setCreatingProject(false); } });
+    void savePendingMetadata().then((ok) => {
+      if (ok) {
+        setMetadataOpen(false);
+        setCreatingProject(false);
+      }
+    });
   }, [pendingMetadataSave, busy]);
   function confirmMetadata() {
-    if (!metadataName.trim()) { setMessage('请填写项目名称。'); return; }
-    setDataset(metadataName.trim()); setProjectNotes(metadataNotes.trim()); setPendingMetadataSave(true);
+    if (!metadataName.trim()) {
+      setMessage('请填写项目名称。');
+      return;
+    }
+    setDataset(metadataName.trim());
+    setProjectNotes(metadataNotes.trim());
+    setPendingMetadataSave(true);
   }
   function exportRows(which: 'selected' | 'all') {
     const activeKeys = new Set(rows.map((r) => r.key));
@@ -1289,14 +1437,32 @@ export default function Home() {
     setStructureExporting(true);
     setStructureExportStatus('正在准备结构图…');
     try {
-      const result = await createStructureExport(candidates, format, await getRDKit(),
-        (completed, total) => setStructureExportStatus(`正在生成结构图：${completed} / ${total} 页`));
-      const name = dataset.replace(/[\\/:*?"<>|\u0000-\u001f]/g, '_').slice(0, 80) || 'PocketAtlas';
-      downloadStructureBlob(`${isDemo ? 'DEMO_' : ''}${name}_候选结构_${candidates.length}.${result.extension}`, result.blob);
-      setStructureExportStatus(`已导出 ${candidates.length} 个候选 · ${result.pages} 页${result.extension === 'zip' ? ' PNG，已打包为 ZIP' : ''}`);
+      const result = await createStructureExport(
+        candidates,
+        format,
+        await getRDKit(),
+        (completed, total) =>
+          setStructureExportStatus(
+            `正在生成结构图：${completed} / ${total} 页`,
+          ),
+      );
+      const name =
+        dataset.replace(/[\\/:*?"<>|\u0000-\u001f]/g, '_').slice(0, 80) ||
+        'PocketAtlas';
+      downloadStructureBlob(
+        `${isDemo ? 'DEMO_' : ''}${name}_候选结构_${candidates.length}.${result.extension}`,
+        result.blob,
+      );
+      setStructureExportStatus(
+        `已导出 ${candidates.length} 个候选 · ${result.pages} 页${result.extension === 'zip' ? ' PNG，已打包为 ZIP' : ''}`,
+      );
     } catch (error) {
-      setStructureExportStatus(error instanceof Error ? error.message : '结构图导出失败，请重试。');
-    } finally { setStructureExporting(false); }
+      setStructureExportStatus(
+        error instanceof Error ? error.message : '结构图导出失败，请重试。',
+      );
+    } finally {
+      setStructureExporting(false);
+    }
   }
   return (
     <>
@@ -1384,43 +1550,128 @@ export default function Home() {
             </div>
           </div>
           <div className="project-tabs" role="tablist" aria-label="已保存项目">
-            {[...projects].filter((project) => !closedIds.includes(project.id) && (project.id === projectId || openIds.includes(project.id)))
+            {[...projects]
+              .filter(
+                (project) =>
+                  !closedIds.includes(project.id) &&
+                  (project.id === projectId || openIds.includes(project.id)),
+              )
               .sort(
                 (a, b) =>
                   Number(b.id === projectId) - Number(a.id === projectId),
               )
               .map((project) => (
-                <div className="project-tab-item" key={project.id}><button
-                  role="tab"
-                  aria-selected={project.id === projectId}
-                  key={project.id}
-                  className={project.id === projectId ? 'active' : ''}
-                  onClick={() => void switchProject(project.id)}
-                  disabled={busy}
-                >
-                  <b>{project.name}</b>
-                  <span>
-                    {project.moleculeCount} 分子 · {project.selectedCount} 候选
-                  </span>
-                </button><button className="project-close" aria-label={"关闭项目 " + project.name} disabled={busy || batchBusy} onClick={() => setCloseTarget(project.id)}>×</button></div>
+                <div className="project-tab-item" key={project.id}>
+                  <button
+                    role="tab"
+                    aria-selected={project.id === projectId}
+                    key={project.id}
+                    className={project.id === projectId ? 'active' : ''}
+                    onClick={() => void switchProject(project.id)}
+                    disabled={busy}
+                  >
+                    <b>{project.name}</b>
+                    <span>
+                      {project.moleculeCount} 分子 · {project.selectedCount}{' '}
+                      候选
+                    </span>
+                  </button>
+                  <button
+                    className="project-close"
+                    aria-label={'关闭项目 ' + project.name}
+                    disabled={busy || batchBusy}
+                    onClick={() => setCloseTarget(project.id)}
+                  >
+                    ×
+                  </button>
+                </div>
               ))}
-            {!workspaceEmpty && !projects.some((project) => project.id === projectId) && (
-              <div className="project-tab-item"><button className="active" role="tab" aria-selected="true">
-                <b>{dataset}</b>
-                <span>{rows.length} 分子 · 当前项目</span>
-              </button><button className="project-close" aria-label={"关闭项目 " + dataset} disabled={busy || batchBusy} onClick={() => setCloseTarget(projectId)}>×</button></div>
-            )}
+            {!workspaceEmpty &&
+              !projects.some((project) => project.id === projectId) && (
+                <div className="project-tab-item">
+                  <button className="active" role="tab" aria-selected="true">
+                    <b>{dataset}</b>
+                    <span>{rows.length} 分子 · 当前项目</span>
+                  </button>
+                  <button
+                    className="project-close"
+                    aria-label={'关闭项目 ' + dataset}
+                    disabled={busy || batchBusy}
+                    onClick={() => setCloseTarget(projectId)}
+                  >
+                    ×
+                  </button>
+                </div>
+              )}
           </div>
           <div className="project-directory">
-            <div><b>项目目录：{directoryLabel || '未设置'}</b><span>{directoryStatus}</span></div>
-            <button className="btn small" disabled={busy || directoryBusy || batchBusy} onClick={() => void changeDirectory()}>选择项目目录</button>
-            <button className="btn small" disabled={busy || directoryBusy} onClick={() => void rescanDirectory()}>授权并检索</button>
-            <label>浏览项目<select aria-label="浏览项目目录文件" value="" disabled={busy || directoryBusy} onChange={(e) => { if(e.target.value) void switchProject(e.target.value); }}><option value="">选择项目文件打开…</option>{projects.map((project) => <option key={project.id} value={project.id}>{project.name} · {String(project.payload.projectNotes || '无备注')}</option>)}</select></label>
-            <small>缓存位置：浏览器独立存储，与项目目录分开。目录按 JSON 项目文件检索；关闭标签不会删除文件。</small>
-            {!!directoryWarnings.length && <details><summary>跳过 {directoryWarnings.length} 个非项目或无效文件</summary>{directoryWarnings.map((warning) => <p key={warning}>{warning}</p>)}</details>}
+            <div>
+              <b>项目目录：{directoryLabel || '未设置'}</b>
+              <span>{directoryStatus}</span>
+            </div>
+            <button
+              className="btn small"
+              disabled={busy || directoryBusy || batchBusy}
+              onClick={() => void changeDirectory()}
+            >
+              选择项目目录
+            </button>
+            <button
+              className="btn small"
+              disabled={busy || directoryBusy}
+              onClick={() => void rescanDirectory()}
+            >
+              授权并检索
+            </button>
+            <label>
+              浏览项目
+              <select
+                aria-label="浏览项目目录文件"
+                value=""
+                disabled={busy || directoryBusy}
+                onChange={(e) => {
+                  if (e.target.value) void switchProject(e.target.value);
+                }}
+              >
+                <option value="">选择项目文件打开…</option>
+                {projects.map((project) => (
+                  <option key={project.id} value={project.id}>
+                    {project.name} ·{' '}
+                    {typeof project.payload.projectNotes === 'string'
+                      ? project.payload.projectNotes
+                      : '无备注'}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <small>
+              缓存位置：浏览器独立存储，与项目目录分开。目录按 JSON
+              项目文件检索；关闭标签不会删除文件。
+            </small>
+            {!!directoryWarnings.length && (
+              <details>
+                <summary>
+                  跳过 {directoryWarnings.length} 个非项目或无效文件
+                </summary>
+                {directoryWarnings.map((warning) => (
+                  <p key={warning}>{warning}</p>
+                ))}
+              </details>
+            )}
           </div>
           <div className="project-actions">
-            <button className="btn small" disabled={!rows.length || busy} onClick={() => { setMetadataName(dataset); setMetadataNotes(projectNotes); setCreatingProject(false); setMetadataOpen(true); }}>项目名称与备注</button>
+            <button
+              className="btn small"
+              disabled={!rows.length || busy}
+              onClick={() => {
+                setMetadataName(dataset);
+                setMetadataNotes(projectNotes);
+                setCreatingProject(false);
+                setMetadataOpen(true);
+              }}
+            >
+              项目名称与备注
+            </button>
             <button
               className="btn small"
               onClick={() => void newProject()}
@@ -1433,7 +1684,8 @@ export default function Home() {
               onClick={() => void saveToWorkspace()}
               disabled={!rows.length || busy}
             >
-              <Save size={14} /> {directoryLabel ? '保存到项目目录' : '保存到浏览器'}
+              <Save size={14} />{' '}
+              {directoryLabel ? '保存到项目目录' : '保存到浏览器'}
             </button>
           </div>
         </section>
@@ -1441,7 +1693,8 @@ export default function Home() {
           <div className="demo-banner">
             <span>
               <FlaskConical size={15} />
-              <b>上传分子</b> · 在此处上传分子，创建分析项目。当前演示评分为模拟值。
+              <b>上传分子</b> ·
+              在此处上传分子，创建分析项目。当前演示评分为模拟值。
             </span>
             <button onClick={() => setImportOpen(true)} disabled={busy}>
               上传分子 <ArrowUpRight size={15} />
@@ -1536,7 +1789,9 @@ export default function Home() {
                 className="btn small"
                 onClick={() => void connectLocalSchrodinger(true)}
               >
-                {connection ? 'Schrödinger 已启用' : '检索并自动连接 Schrödinger'}
+                {connection
+                  ? 'Schrödinger 已启用'
+                  : '检索并自动连接 Schrödinger'}
               </button>
               <button
                 className="btn small"
@@ -1576,10 +1831,16 @@ export default function Home() {
             <details>
               <summary>Schrödinger 自动连接</summary>
               <p>
-                使用 Pocket Atlas 启动器：首次运行选择 Schrödinger 安装目录，之后启动时自动桥接并打开工作台，无需连接文件。未安装
-                Schrödinger 时可继续使用分子聚类；需要原生 MAEGZ 与互作分析时再运行启动器配置。
+                使用 Pocket Atlas 启动器：首次运行选择 Schrödinger
+                安装目录，之后启动时自动桥接并打开工作台，无需连接文件。未安装
+                Schrödinger 时可继续使用分子聚类；需要原生 MAEGZ
+                与互作分析时再运行启动器配置。
               </p>
-              <a className="btn small" href="/pocket-atlas-launcher.zip" download>
+              <a
+                className="btn small"
+                href="/pocket-atlas-launcher.zip"
+                download
+              >
                 下载 Pocket Atlas 启动器
               </a>
             </details>
@@ -1658,7 +1919,7 @@ export default function Home() {
                     与口袋互作挑选；不必把簇数强行调到候选目标数量。
                   </p>
                 </details>
-                <label>
+                <label htmlFor="choice-聚类依据">
                   聚类依据
                   <Choice
                     label="聚类依据"
@@ -1671,7 +1932,7 @@ export default function Home() {
                     ]}
                   />
                 </label>
-                <label>
+                <label htmlFor="choice-Morgan 半径">
                   Morgan 半径
                   <Choice
                     label="Morgan 半径"
@@ -1680,7 +1941,7 @@ export default function Home() {
                     options={[1, 2, 3, 4].map((v) => [String(v), String(v)])}
                   />
                 </label>
-                <label>
+                <label htmlFor="choice-指纹长度">
                   指纹长度
                   <Choice
                     label="指纹长度"
@@ -1722,7 +1983,7 @@ export default function Home() {
                 )}
                 <details className="cluster-help" open>
                   <summary>保留前 N 个分子进行分析</summary>
-                  <label>
+                  <label htmlFor="choice-排名依据">
                     排名依据
                     <Choice
                       label="保留分子的排名依据"
@@ -1779,7 +2040,14 @@ export default function Home() {
               <div className="panel-head">
                 <h2>结构分组</h2>
                 <span className="count-badge">{clusters.length}</span>
-                <button className="scaffold-overview-btn" disabled={!clusters.length||busy} onClick={()=>setScaffoldPreview('all')}><Network size={13}/>骨架总览</button>
+                <button
+                  className="scaffold-overview-btn"
+                  disabled={!clusters.length || busy}
+                  onClick={() => setScaffoldPreview('all')}
+                >
+                  <Network size={13} />
+                  骨架总览
+                </button>
               </div>
               <div className="cluster-list">
                 <button
@@ -1822,7 +2090,10 @@ export default function Home() {
                           selectedSet.has(rows[i].key),
                         ) && <Check size={12} className="selected-mark" />}
                       </span>
-                      <span className="cluster-row-end"><b>{c.size}</b><Network size={13}/></span>
+                      <span className="cluster-row-end">
+                        <b>{c.size}</b>
+                        <Network size={13} />
+                      </span>
                     </button>
                   ))}
               </div>
@@ -1833,18 +2104,21 @@ export default function Home() {
               <div>
                 <h2>分子分布</h2>
                 <p className="micro">
-                  {chart === 'map'
-                    ? '按结构簇着色 · FastMap 距离投影'
+                  {chart !== 'scores'
+                    ? '按结构簇着色 · 二维 / 三维 FastMap 距离投影'
                     : '对接评分 × MM/GBSA · 数值越低越优先'}
                 </p>
               </div>
               <Tabs
                 value={chart}
-                onValueChange={(v) => setChart(v as 'map' | 'scores')}
+                onValueChange={(v) =>
+                  setChart(v as 'map' | 'scores' | 'clusters')
+                }
               >
                 <TabsList>
                   <TabsTrigger value="map">化学空间</TabsTrigger>
                   <TabsTrigger value="scores">评分分布</TabsTrigger>
+                  <TabsTrigger value="clusters">聚类分簇</TabsTrigger>
                 </TabsList>
               </Tabs>
             </div>
@@ -1887,19 +2161,49 @@ export default function Home() {
               <div>
                 <ShoppingBag size={17} />
                 <b>候选清单</b>
-                <span>{selected.length} / {candidateLimit ?? '不限'}</span>
+                <span>
+                  {selected.length} / {candidateLimit ?? '不限'}
+                </span>
               </div>
-              <label className="candidate-limit">候选数量上限
-                <input aria-label="候选数量上限" type="number" min="1" step="1" placeholder="不限" value={candidateLimit ?? ''}
+              <label className="candidate-limit">
+                候选数量上限
+                <input
+                  aria-label="候选数量上限"
+                  type="number"
+                  min="1"
+                  step="1"
+                  placeholder="不限"
+                  value={candidateLimit ?? ''}
                   onChange={(event) => {
                     const value = event.target.value;
                     if (!value) setCandidateLimit(null);
-                    else if (Number.isSafeInteger(Number(value)) && Number(value) > 0) setCandidateLimit(Number(value));
-                  }} />
+                    else if (
+                      Number.isSafeInteger(Number(value)) &&
+                      Number(value) > 0
+                    )
+                      setCandidateLimit(Number(value));
+                  }}
+                />
               </label>
-              {candidateLimit !== null && <Progress value={Math.min(100, (selected.length / candidateLimit) * 100)} />}
+              {candidateLimit !== null && (
+                <Progress
+                  value={Math.min(
+                    100,
+                    (selected.length / candidateLimit) * 100,
+                  )}
+                />
+              )}
               <p>
-                {candidateLimit === null ? '数量不限' : selected.length > candidateLimit ? '已超出上限 ' + (selected.length - candidateLimit) + ' 个，原选择已保留' : '剩余 ' + (candidateLimit - selected.length) + ' 个名额'} · 覆盖 {covered} 个结构簇
+                {candidateLimit === null
+                  ? '数量不限'
+                  : selected.length > candidateLimit
+                    ? '已超出上限 ' +
+                      (selected.length - candidateLimit) +
+                      ' 个，原选择已保留'
+                    : '剩余 ' +
+                      (candidateLimit - selected.length) +
+                      ' 个名额'}{' '}
+                · 覆盖 {covered} 个结构簇
               </p>
               {selected.some((k) => !rows.some((r) => r.key === k)) && (
                 <p>
@@ -1953,7 +2257,7 @@ export default function Home() {
                     </button>
                   )}
                   {receptors.length > 0 && (
-                    <label>
+                    <label htmlFor="choice-三维受体">
                       三维受体
                       <Choice
                         label="三维受体"
@@ -2282,7 +2586,9 @@ export default function Home() {
                 </label>
                 <datalist id="receptor-residues">
                   {receptorResidues.map((key) => (
-                    <option key={key} value={key} />
+                    <option key={key} value={key}>
+                      {key}
+                    </option>
                   ))}
                 </datalist>
                 <label>
@@ -2311,9 +2617,12 @@ export default function Home() {
                       setPage(0);
                     }}
                   >
-                    <option value="all">全部原生互作</option>
+                    <option value="all">全部已确认互作</option>
                     {Object.entries(interactionKinds)
-                      .filter(([key]) => key !== 'contact')
+                      .filter(
+                        ([key]) =>
+                          !['contact', 'hbond_candidate'].includes(key),
+                      )
                       .map(([key, [name]]) => (
                         <option key={key} value={key}>
                           {name}
@@ -2353,10 +2662,24 @@ export default function Home() {
                 <p role="alert">请先输入目标残基。</p>
               )}
               <div className="complex-toolbar">
+                <label>
+                  计算方法{' '}
+                  <select
+                    aria-label="筛选互作计算方法"
+                    value={interactionMethod}
+                    onChange={(e) => {
+                      setInteractionMethod(e.target.value as 'open' | 'native');
+                      setBatchProgress('');
+                    }}
+                  >
+                    <option value="open">开源几何规则（无需安装）</option>
+                    <option value="native">Schrödinger 原生</option>
+                  </select>
+                </label>
                 <button
                   className="btn small"
                   disabled={
-                    !connection ||
+                    (interactionMethod === 'native' && !connection) ||
                     !receptors[receptorIndex] ||
                     batchBusy ||
                     busy
@@ -2367,16 +2690,19 @@ export default function Home() {
                   {
                     baseFiltered.filter(
                       (r) =>
-                        poses[r.key]?.nativeId &&
+                        poses[r.key]?.atoms.length &&
+                        (interactionMethod === 'open' ||
+                          poses[r.key]?.nativeId) &&
                         (!interactionCache[
                           interactionKey(receptors[receptorIndex], poses[r.key])
                         ] ||
-                          interactionCache[
-                            interactionKey(
-                              receptors[receptorIndex],
-                              poses[r.key],
-                            )
-                          ].errors.length),
+                          (interactionMethod === 'native' &&
+                            interactionCache[
+                              interactionKey(
+                                receptors[receptorIndex],
+                                poses[r.key],
+                              )
+                            ].errors.length)),
                     ).length
                   }
                   ）
@@ -2461,10 +2787,24 @@ export default function Home() {
             <Table className="compound-table">
               <TableHeader>
                 <TableRow>
-                  <TableHead><Checkbox aria-label="全选当前页" disabled={busy || !shown.length}
-                    checked={shown.length > 0 && shown.every((r) => selectedSet.has(r.key))}
-                    indeterminate={shown.some((r) => selectedSet.has(r.key)) && !shown.every((r) => selectedSet.has(r.key))}
-                    onCheckedChange={(checked) => togglePage(checked === true)} /> <span>当前页</span></TableHead>
+                  <TableHead>
+                    <Checkbox
+                      aria-label="全选当前页"
+                      disabled={busy || !shown.length}
+                      checked={
+                        shown.length > 0 &&
+                        shown.every((r) => selectedSet.has(r.key))
+                      }
+                      indeterminate={
+                        shown.some((r) => selectedSet.has(r.key)) &&
+                        !shown.every((r) => selectedSet.has(r.key))
+                      }
+                      onCheckedChange={(checked) =>
+                        togglePage(checked === true)
+                      }
+                    />{' '}
+                    <span>当前页</span>
+                  </TableHead>
                   <TableHead>化合物 ID</TableHead>
                   <TableHead>二维结构</TableHead>
                   <TableHead>结构簇</TableHead>
@@ -2582,11 +2922,30 @@ export default function Home() {
                 {Math.min((safePage + 1) * pageSize, filtered.length)} /{' '}
                 {filtered.length} 条
               </span>
-              <button className="page-button" disabled={busy || !shown.some((r) => selectedSet.has(r.key))} onClick={() => togglePage(false)}>取消当前页选择</button>
-              <label className="page-size">每页显示
-                <select aria-label="每页显示分子数量" value={pageSize} onChange={(event) => { setPageSize(Number(event.target.value)); setPage(0); }}>
-                  {[20, 50, 100].map((size) => <option key={size} value={size}>{size}</option>)}
-                </select> 个分子
+              <button
+                className="page-button"
+                disabled={busy || !shown.some((r) => selectedSet.has(r.key))}
+                onClick={() => togglePage(false)}
+              >
+                取消当前页选择
+              </button>
+              <label className="page-size">
+                每页显示
+                <select
+                  aria-label="每页显示分子数量"
+                  value={pageSize}
+                  onChange={(event) => {
+                    setPageSize(Number(event.target.value));
+                    setPage(0);
+                  }}
+                >
+                  {[20, 50, 100].map((size) => (
+                    <option key={size} value={size}>
+                      {size}
+                    </option>
+                  ))}
+                </select>{' '}
+                个分子
               </label>
               <Pagination aria-label="分子列表分页">
                 <PaginationContent>
@@ -2635,6 +2994,8 @@ export default function Home() {
       <ComplexViewer
         open={viewOpen}
         connection={connection}
+        method={interactionMethod}
+        onMethodChange={setInteractionMethod}
         cached={interactionCache}
         onCache={(key, value) =>
           setInteractionCache((old) => ({ ...old, [key]: value }))
@@ -2647,17 +3008,96 @@ export default function Home() {
           setViewOpen(false);
         }}
       />
-      <Dialog open={metadataOpen} onOpenChange={(open) => { if (!creatingProject) setMetadataOpen(open); }}>
-        <DialogContent><DialogHeader><DialogTitle>{creatingProject ? '确认新项目' : '项目名称与备注'}</DialogTitle><DialogDescription>确认项目名称与备注后保存。{directoryLabel ? '保存目录：' + directoryLabel : '尚未指定目录，将先保存到浏览器；之后可选择项目目录保存文件。'}</DialogDescription></DialogHeader>
-          <label>项目名称<input className="project-meta-input" aria-label="确认项目名称" value={metadataName} onChange={(e) => setMetadataName(e.target.value)} maxLength={160} /></label>
-          <label>项目备注<textarea className="project-meta-input" aria-label="项目备注" value={metadataNotes} onChange={(e) => setMetadataNotes(e.target.value)} placeholder="研究目的、数据来源、操作者或分析说明（可留空）" /></label>
-          <button className="btn primary" disabled={busy || pendingMetadataSave || !metadataName.trim()} onClick={confirmMetadata}>确认并保存项目</button>
-          {creatingProject && <button className="btn" onClick={() => { setMetadataOpen(false); setCloseTarget(projectId); }}>放弃新项目…</button>}
+      <Dialog
+        open={metadataOpen}
+        onOpenChange={(open) => {
+          if (!creatingProject) setMetadataOpen(open);
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>
+              {creatingProject ? '确认新项目' : '项目名称与备注'}
+            </DialogTitle>
+            <DialogDescription>
+              确认项目名称与备注后保存。
+              {directoryLabel
+                ? '保存目录：' + directoryLabel
+                : '尚未指定目录，将先保存到浏览器；之后可选择项目目录保存文件。'}
+            </DialogDescription>
+          </DialogHeader>
+          <label>
+            项目名称
+            <input
+              className="project-meta-input"
+              aria-label="确认项目名称"
+              value={metadataName}
+              onChange={(e) => setMetadataName(e.target.value)}
+              maxLength={160}
+            />
+          </label>
+          <label>
+            项目备注
+            <textarea
+              className="project-meta-input"
+              aria-label="项目备注"
+              value={metadataNotes}
+              onChange={(e) => setMetadataNotes(e.target.value)}
+              placeholder="研究目的、数据来源、操作者或分析说明（可留空）"
+            />
+          </label>
+          <button
+            className="btn primary"
+            disabled={busy || pendingMetadataSave || !metadataName.trim()}
+            onClick={confirmMetadata}
+          >
+            确认并保存项目
+          </button>
+          {creatingProject && (
+            <button
+              className="btn"
+              onClick={() => {
+                setMetadataOpen(false);
+                setCloseTarget(projectId);
+              }}
+            >
+              放弃新项目…
+            </button>
+          )}
         </DialogContent>
       </Dialog>
-      <Dialog open={!!closeTarget} onOpenChange={(open) => { if(!open) setCloseTarget(null); }}>
-        <DialogContent><DialogHeader><DialogTitle>关闭项目前是否保存？</DialogTitle><DialogDescription>保存后关闭会保留最新修改；不保存关闭会放弃当前未保存更改。磁盘项目文件不会被删除。</DialogDescription></DialogHeader>
-          <div className="actions"><button className="btn primary" disabled={busy} onClick={() => void finishClose(true)}>保存并关闭</button><button className="btn" disabled={busy} onClick={() => void finishClose(false)}>不保存关闭</button><button className="btn" onClick={() => setCloseTarget(null)}>取消</button></div>
+      <Dialog
+        open={!!closeTarget}
+        onOpenChange={(open) => {
+          if (!open) setCloseTarget(null);
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>关闭项目前是否保存？</DialogTitle>
+            <DialogDescription>
+              保存后关闭会保留最新修改；不保存关闭会放弃当前未保存更改。磁盘项目文件不会被删除。
+            </DialogDescription>
+          </DialogHeader>
+          <div className="actions">
+            <button
+              className="btn primary"
+              disabled={busy}
+              onClick={() => void finishClose(true)}
+            >
+              保存并关闭
+            </button>
+            <button
+              className="btn"
+              disabled={busy}
+              onClick={() => void finishClose(false)}
+            >
+              不保存关闭
+            </button>
+            <button className="btn" onClick={() => setCloseTarget(null)}>
+              取消
+            </button>
+          </div>
         </DialogContent>
       </Dialog>
       <Dialog open={importOpen} onOpenChange={(v) => !busy && setImportOpen(v)}>
@@ -2904,13 +3344,21 @@ export default function Home() {
           </button>
         </DialogContent>
       </Dialog>
-      <ClusterScaffoldDialog rows={rows} clusters={clusters} openCluster={scaffoldPreview} onClose={()=>setScaffoldPreview(null)} dataset={dataset} isDemo={isDemo}/>
+      <ClusterScaffoldDialog
+        rows={rows}
+        clusters={clusters}
+        openCluster={scaffoldPreview}
+        onClose={() => setScaffoldPreview(null)}
+        dataset={dataset}
+        isDemo={isDemo}
+      />
       <Dialog open={exportOpen} onOpenChange={setExportOpen}>
         <DialogContent className="export-dialog">
           <DialogHeader>
             <DialogTitle>导出筛选结果</DialogTitle>
             <DialogDescription>
-              CSV 保留完整分析数据；候选结构图仅包含结构式、ID、分子量和 MM/GBSA。
+              CSV 保留完整分析数据；候选结构图仅包含结构式、ID、分子量和
+              MM/GBSA。
             </DialogDescription>
           </DialogHeader>
           {isDemo && (
@@ -2924,26 +3372,65 @@ export default function Home() {
             <ShoppingBag size={23} />
             <div>
               <b>初筛候选清单</b>
-              <span>{selected.length} / {candidateLimit ?? '不限'} 个 · CSV，可用 Excel 打开</span>
+              <span>
+                {selected.length} / {candidateLimit ?? '不限'} 个 · CSV，可用
+                Excel 打开
+              </span>
             </div>
             <Download size={17} />
           </button>
-          <button className="export-option" disabled={!selected.length || busy || structureExporting}
-            onClick={() => exportStructures('pdf')}>
+          <button
+            className="export-option"
+            disabled={!selected.length || busy || structureExporting}
+            onClick={() => exportStructures('pdf')}
+          >
             <FileText size={23} />
-            <div><b>候选结构图 · PDF</b><span>{selected.length} 个候选 · A4 自动分页 · 每页 12 个</span></div>
+            <div>
+              <b>候选结构图 · PDF</b>
+              <span>{selected.length} 个候选 · A4 自动分页 · 每页 12 个</span>
+            </div>
             <Download size={17} />
           </button>
-          <button className="export-option" disabled={!selected.length || busy || structureExporting}
-            onClick={() => exportStructures('png')}>
+          <button
+            className="export-option"
+            disabled={!selected.length || busy || structureExporting}
+            onClick={() => exportStructures('png')}
+          >
             <ImageIcon size={23} />
-            <div><b>候选结构图 · PNG</b><span>2480 × 3508 像素 / 页 · 多页 PNG 打包为 ZIP</span></div>
+            <div>
+              <b>候选结构图 · PNG</b>
+              <span>2480 × 3508 像素 / 页 · 多页 PNG 打包为 ZIP</span>
+            </div>
             <Download size={17} />
           </button>
-          <p className="structure-export-note">包含所有已选候选，不受当前列表筛选或分页影响；缺失数值显示“—”。</p>
-          {structureExportStatus && <p className="structure-export-status" role="status" aria-live="polite">{structureExportStatus}</p>}
-          <button className="export-option" disabled={!clusters.length||busy} onClick={()=>{setExportOpen(false);setScaffoldPreview('all');}}>
-            <Network size={23}/><div><b>簇骨架总览与导出</b><span>{clusters.length} 个当前分析簇 · R 位点骨架 · PNG / PDF</span></div><Download size={17}/>
+          <p className="structure-export-note">
+            包含所有已选候选，不受当前列表筛选或分页影响；缺失数值显示“—”。
+          </p>
+          {structureExportStatus && (
+            <p
+              className="structure-export-status"
+              role="status"
+              aria-live="polite"
+            >
+              {structureExportStatus}
+            </p>
+          )}
+          <button
+            className="export-option"
+            disabled={!clusters.length || busy}
+            onClick={() => {
+              setExportOpen(false);
+              setScaffoldPreview('all');
+            }}
+          >
+            <Network size={23} />
+            <div>
+              <b>簇骨架总览与导出</b>
+              <span>
+                {clusters.length} 个当前分析簇 · R 位点骨架 · PNG / PDF
+              </span>
+            </div>
+            <Download size={17} />
           </button>
           <button
             className="export-option"
@@ -2989,8 +3476,8 @@ export default function Home() {
             <h3>2. 按结构相似性分组</h3>
             <p>
               新项目默认使用 Murcko 骨架、Tanimoto ≥ 0.60、Morgan 半径 2、2048
-              位指纹；参数可调整，已有项目按其保存设置恢复。默认不考虑手性，可打开手性选项。Tanimoto = 共有置位数 /
-              合并置位数。Butina
+              位指纹；参数可调整，已有项目按其保存设置恢复。默认不考虑手性，可打开手性选项。Tanimoto
+              = 共有置位数 / 合并置位数。Butina
               每轮选未分配邻居最多的分子作为中心，成员与中心满足 Tanimoto ≥
               阈值；同簇任意两成员不一定达到该阈值。平局按原始输入行序确定中心。0.60
               是可调的起始设置，不是活性判据。

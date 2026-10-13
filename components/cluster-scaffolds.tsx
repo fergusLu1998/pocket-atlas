@@ -1,3 +1,4 @@
+/* oxlint-disable no-control-regex -- Control characters are intentionally removed from exported filenames. */
 'use client';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import Image from 'next/image';

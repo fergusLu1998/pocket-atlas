@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import vm from 'node:vm';
 import ts from 'typescript';
 
-const module = { exports: {} };
+const testModule = { exports: {} };
 const output = ts.transpileModule(
   fs.readFileSync('lib/structure-export.ts', 'utf8'),
   {
@@ -13,8 +13,8 @@ const output = ts.transpileModule(
     },
   },
 ).outputText;
-vm.runInNewContext(output, { module, exports: module.exports });
-const { structurePages, descriptorText } = module.exports;
+vm.runInNewContext(output, { module: testModule, exports: testModule.exports });
+const { structurePages, descriptorText } = testModule.exports;
 for (const count of [0, 1, 12, 13, 25, 73]) {
   const records = Array.from({ length: count }, (_, i) => ({
     key: `record-${i}`,

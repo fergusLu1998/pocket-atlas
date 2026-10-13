@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { Structure, toMolBlock, toPDB } from '@/lib/structures';
 import { csv, download } from '@/lib/chem';
 import {
@@ -8,7 +8,11 @@ import {
   InteractionResult,
   calculateInteractions,
 } from '@/lib/local-engine';
-import { residueKey, endpointResidue } from '@/lib/interactions';
+import {
+  residueKey,
+  endpointResidue,
+  interactionKey,
+} from '@/lib/interactions';
 import {
   Dialog,
   DialogContent,
@@ -31,6 +35,7 @@ function engine() {
 }
 const kinds: Record<string, [string, string]> = {
   hbond: ['氢键', '#1783bd'],
+  hbond_candidate: ['氢键候选（缺氢）', '#8bb7cc'],
   halogen: ['卤键', '#9861c7'],
   salt: ['盐桥', '#e35959'],
   pipi: ['π–π', '#d49422'],
@@ -183,6 +188,8 @@ export function ComplexViewer({
   protein,
   proteins,
   connection,
+  method,
+  onMethodChange,
   cached,
   onCache,
   onClose,
@@ -192,12 +199,18 @@ export function ComplexViewer({
   protein: Structure | null;
   proteins: Structure[];
   connection: EngineConnection | null;
+  method: 'native' | 'open';
+  onMethodChange: (method: 'native' | 'open') => void;
   cached: Record<string, InteractionResult>;
   onCache: (key: string, value: InteractionResult) => void;
   onClose: () => void;
 }) {
   const [hostElement, setHostElement] = useState<HTMLDivElement | null>(null);
-  const [hoveredInteraction, setHoveredInteraction] = useState<{ pair: Interaction; x: number; y: number } | null>(null);
+  const [hoveredInteraction, setHoveredInteraction] = useState<{
+    pair: Interaction;
+    x: number;
+    y: number;
+  } | null>(null);
   const labelLayer = useRef<HTMLDivElement>(null),
     stage = useRef<HTMLDivElement>(null),
     viewer = useRef<any>(null),
@@ -225,10 +238,7 @@ export function ComplexViewer({
     [surfaceBusy, setSurfaceBusy] = useState(false);
   const [focusedResidue, setFocusedResidue] = useState('');
   const mode = ligand ? preset : 'full';
-  const cacheKey =
-    protein?.nativeId && ligand?.nativeId
-      ? protein.nativeId + '|' + ligand.nativeId
-      : '';
+  const cacheKey = interactionKey(protein, ligand, method);
   const native = cacheKey ? cached[cacheKey] : null;
   const referenceSequence = useMemo(() => sequenceOf(protein), [protein]);
   const alignments = useMemo(
@@ -240,7 +250,7 @@ export function ComplexViewer({
           title: proteins[index]?.title || `受体 ${index + 1}`,
           result: align(referenceSequence, sequenceOf(proteins[index])),
         })),
-    [alignmentSelection, proteins, referenceSequence],
+    [alignmentSelection, proteins, referenceSequence, protein],
   );
   const autoRequested = useRef('');
   const neighborhood = useMemo(() => {
@@ -289,7 +299,7 @@ export function ComplexViewer({
     [native, contacts, neighborhood, enabled],
   );
   const residueOptions = useMemo(() => {
-    const keys = new Set([...neighborhood.near]);
+    const keys = new Set(neighborhood.near);
     shown.forEach((p) => keys.add(endpointResidue(p.a)));
     return referenceSequence.filter((r) => keys.has(r.key));
   }, [referenceSequence, neighborhood.near, shown]);
@@ -310,31 +320,41 @@ export function ComplexViewer({
       same = observed.filter((aa) => aa === wt).length;
     return { wt, observed, same, total: observed.length };
   }
-  async function calculate() {
-    if (!connection || !cacheKey) return;
+  const calculate = useCallback(async () => {
+    if (
+      !protein ||
+      !ligand ||
+      !cacheKey ||
+      (method === 'native' && !connection)
+    )
+      return;
     setCalculating(true);
     setError('');
     try {
-      const result = await calculateInteractions(connection, protein!, ligand!);
+      const result = await calculateInteractions(
+        method === 'open' ? null : connection,
+        protein,
+        ligand,
+      );
       onCache(cacheKey, result);
     } catch (e) {
       setError((e as Error).message);
     } finally {
       setCalculating(false);
     }
-  }
+  }, [connection, cacheKey, protein, ligand, method, onCache]);
   useEffect(() => {
     if (
       open &&
-      connection &&
+      (method === 'open' || connection) &&
       cacheKey &&
       !native &&
-      autoRequested.current !== connection.token + cacheKey
+      autoRequested.current !== (connection?.token || 'browser') + cacheKey
     ) {
-      autoRequested.current = connection.token + cacheKey;
+      autoRequested.current = (connection?.token || 'browser') + cacheKey;
       void calculate();
     }
-  }, [open, connection, cacheKey, native]);
+  }, [open, connection, cacheKey, native, method, calculate]);
   useEffect(() => {
     const element = stage.current;
     if (!open || !element) return;
@@ -346,13 +366,37 @@ export function ComplexViewer({
       setHoveredInteraction(null);
       const v = viewer.current;
       if (!v) return;
-      const delta = event.deltaY * (event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? element.clientHeight : 1);
+      const delta =
+        event.deltaY *
+        (event.deltaMode === 1
+          ? 16
+          : event.deltaMode === 2
+            ? element.clientHeight
+            : 1);
       v.zoom(Math.exp(-Math.max(-200, Math.min(200, delta)) * 0.002));
       v.render();
     };
     element.addEventListener('wheel', wheel, { capture: true, passive: false });
     return () => element.removeEventListener('wheel', wheel, true);
   }, [open, hostElement]);
+  const focusResidue = useCallback(
+    (key: string) => {
+      const v = viewer.current;
+      if (!v || !protein) return;
+      // PDB readers may omit hydrogens; use the rendered atom indices, not source indices.
+      const indices = v
+        .selectedAtoms({ model: 0 })
+        .filter((a: any) => residueKey(a) === key)
+        .map((a: any) => a.index);
+      if (!indices.length) return;
+      v.zoomTo({ model: 0, index: indices });
+      v.zoom(1.5);
+      if (clipping) v.setSlab(-depth / 2, depth / 2);
+      v.render();
+      setFocusedResidue(key);
+    },
+    [protein, clipping, depth],
+  );
   useEffect(() => {
     if (!open) {
       camera.current = null;
@@ -364,6 +408,7 @@ export function ComplexViewer({
     let alive = true;
     let observer: ResizeObserver | undefined;
     const el = hostElement;
+    const sceneLabelLayer = labelLayer.current;
     engine()
       .then((D) => {
         if (!alive || !el) return;
@@ -601,7 +646,7 @@ export function ComplexViewer({
         viewer.current = null;
       }
       el?.replaceChildren();
-      labelLayer.current?.replaceChildren();
+      sceneLabelLayer?.replaceChildren();
     };
   }, [
     open,
@@ -610,6 +655,9 @@ export function ComplexViewer({
     protein,
     style,
     preset,
+    cutoff,
+    mode,
+    focusResidue,
     surface,
     surfaceOpacity,
     proteinOpacity,
@@ -632,44 +680,57 @@ export function ComplexViewer({
     v.render();
     setFocusedResidue('');
   }
-  function focusResidue(key: string) {
-    const v = viewer.current;
-    if (!v || !protein) return;
-    // PDB readers may omit hydrogens; use the rendered atom indices, not source indices.
-    const indices = v
-      .selectedAtoms({ model: 0 })
-      .filter((a: any) => residueKey(a) === key)
-      .map((a: any) => a.index);
-    if (!indices.length) return;
-    v.zoomTo({ model: 0, index: indices });
-    v.zoom(1.5);
-    if (clipping) v.setSlab(-depth / 2, depth / 2);
-    v.render();
-    setFocusedResidue(key);
-  }
   function hoverInteraction(event: React.PointerEvent<HTMLDivElement>) {
     const v = viewer.current;
     const el = stage.current;
-    if (!v || !el || event.buttons || mode === 'ligand') { setHoveredInteraction(null); return; }
+    if (!v || !el || event.buttons || mode === 'ligand') {
+      setHoveredInteraction(null);
+      return;
+    }
     const box = el.getBoundingClientRect();
-    const x = event.clientX - box.left, y = event.clientY - box.top;
-    let nearest: Interaction | null = null, nearestDistance = 8;
+    const x = event.clientX - box.left,
+      y = event.clientY - box.top;
+    let nearest: Interaction | null = null,
+      nearestDistance = 8;
     const [tx, ty, tz, , qx, qy, qz, qw] = v.getView();
     for (const pair of shown) {
       if (clipping) {
-        const ax = (pair.a.x + pair.b.x) / 2 + tx, ay = (pair.a.y + pair.b.y) / 2 + ty, az = (pair.a.z + pair.b.z) / 2 + tz;
-        const z = 2 * (qx * qz - qy * qw) * ax + 2 * (qy * qz + qx * qw) * ay + (1 - 2 * (qx * qx + qy * qy)) * az;
+        const ax = (pair.a.x + pair.b.x) / 2 + tx,
+          ay = (pair.a.y + pair.b.y) / 2 + ty,
+          az = (pair.a.z + pair.b.z) / 2 + tz;
+        const z =
+          2 * (qx * qz - qy * qw) * ax +
+          2 * (qy * qz + qx * qw) * ay +
+          (1 - 2 * (qx * qx + qy * qy)) * az;
         if (Math.abs(z) > depth / 2) continue;
       }
-      const a = v.modelToScreen(pair.a), b = v.modelToScreen(pair.b);
-      const ax = a.x - box.left - window.scrollX, ay = a.y - box.top - window.scrollY;
-      const bx = b.x - box.left - window.scrollX, by = b.y - box.top - window.scrollY;
-      const dx = bx - ax, dy = by - ay, length = dx * dx + dy * dy;
-      const t = length ? Math.max(0, Math.min(1, ((x - ax) * dx + (y - ay) * dy) / length)) : 0;
+      const a = v.modelToScreen(pair.a),
+        b = v.modelToScreen(pair.b);
+      const ax = a.x - box.left - window.scrollX,
+        ay = a.y - box.top - window.scrollY;
+      const bx = b.x - box.left - window.scrollX,
+        by = b.y - box.top - window.scrollY;
+      const dx = bx - ax,
+        dy = by - ay,
+        length = dx * dx + dy * dy;
+      const t = length
+        ? Math.max(0, Math.min(1, ((x - ax) * dx + (y - ay) * dy) / length))
+        : 0;
       const distance = Math.hypot(x - ax - t * dx, y - ay - t * dy);
-      if (distance < nearestDistance) { nearest = pair; nearestDistance = distance; }
+      if (distance < nearestDistance) {
+        nearest = pair;
+        nearestDistance = distance;
+      }
     }
-    setHoveredInteraction(nearest ? { pair: nearest, x: Math.min(box.width - 240, Math.max(8, x + 12)), y: Math.max(8, y - 78) } : null);
+    setHoveredInteraction(
+      nearest
+        ? {
+            pair: nearest,
+            x: Math.min(box.width - 240, Math.max(8, x + 12)),
+            y: Math.max(8, y - 78),
+          }
+        : null,
+    );
   }
   async function saveImage() {
     if (!viewer.current || !hostElement) return;
@@ -763,13 +824,31 @@ export function ComplexViewer({
             保存图片
           </button>
         </div>
-        <div className="complex-stage" ref={stage} onPointerMove={hoverInteraction} onPointerUp={hoverInteraction} onPointerLeave={() => setHoveredInteraction(null)} onPointerDown={() => setHoveredInteraction(null)}>
+        <div
+          className="complex-stage"
+          ref={stage}
+          onPointerMove={hoverInteraction}
+          onPointerUp={hoverInteraction}
+          onPointerLeave={() => setHoveredInteraction(null)}
+          onPointerDown={() => setHoveredInteraction(null)}
+        >
           <div className="complex-canvas" ref={setHostElement} />
           <div className="residue-label-layer" ref={labelLayer} />
           {hoveredInteraction && shown.includes(hoveredInteraction.pair) && (
-            <div className="interaction-tooltip" role="tooltip" style={{ left: hoveredInteraction.x, top: hoveredInteraction.y }}>
-              <strong>{endpointResidue(hoveredInteraction.pair.a)} · {kinds[hoveredInteraction.pair.type]?.[0] || hoveredInteraction.pair.type}</strong>
-              <div>{hoveredInteraction.pair.a.label} → {hoveredInteraction.pair.b.label}</div>
+            <div
+              className="interaction-tooltip"
+              role="tooltip"
+              style={{ left: hoveredInteraction.x, top: hoveredInteraction.y }}
+            >
+              <strong>
+                {endpointResidue(hoveredInteraction.pair.a)} ·{' '}
+                {kinds[hoveredInteraction.pair.type]?.[0] ||
+                  hoveredInteraction.pair.type}
+              </strong>
+              <div>
+                {hoveredInteraction.pair.a.label} →{' '}
+                {hoveredInteraction.pair.b.label}
+              </div>
               <div>{hoveredInteraction.pair.distance.toFixed(2)} Å</div>
             </div>
           )}
@@ -919,22 +998,43 @@ export function ComplexViewer({
               π 互作仍会显示。
             </p>
             <div className="complex-toolbar">
+              <label>
+                互作计算方法{' '}
+                <select
+                  aria-label="姿态互作计算方法"
+                  value={method}
+                  onChange={(e) =>
+                    onMethodChange(e.target.value as 'native' | 'open')
+                  }
+                >
+                  <option value="open">开源几何规则（浏览器）</option>
+                  <option value="native">Schrödinger 原生</option>
+                </select>
+              </label>
               <button
                 className="btn small"
-                disabled={!connection || !cacheKey || calculating}
+                disabled={
+                  (method === 'native' && !connection) ||
+                  !cacheKey ||
+                  calculating
+                }
                 onClick={calculate}
               >
                 {calculating
-                  ? '本地计算中…'
-                  : native
-                    ? '重新计算原生互作'
-                    : '计算 Schrödinger 互作'}
+                  ? '互作计算中…'
+                  : method === 'open'
+                    ? native
+                      ? '重新计算开源互作'
+                      : '计算开源互作'
+                    : native
+                      ? '重新计算原生互作'
+                      : '计算 Schrödinger 互作'}
               </button>
               <span className="micro">
                 {!cacheKey
-                  ? '连接本地引擎并重新导入受体和配体后可计算。'
+                  ? '需要同一坐标系中的受体与配体。'
                   : native
-                    ? '原生接口默认规则 · 结果已缓存'
+                    ? native.engine + ' · 结果已缓存'
                     : '按当前受体与配体配对计算'}
               </span>
               <label>
@@ -946,6 +1046,12 @@ export function ComplexViewer({
                 附加几何近接
               </label>
             </div>
+            {method === 'open' && (
+              <p className="micro">
+                开源几何规则依据原子距离、键拓扑、形式电荷和芳香环方向判断。缺少供体氢的近接仅标为氢键候选，不作为已确认互作；缺失信息的负结果记为未确定。判据见互作明细中的距离类型与导出结果。本方法不执行质子化、能量优化或原生
+                Schrödinger 计算。
+              </p>
+            )}
             <details className="analysis-block">
               <summary>
                 序列比对与互作保守性 · 已选 {alignmentSelection.length} 个受体

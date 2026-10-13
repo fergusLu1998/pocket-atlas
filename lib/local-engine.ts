@@ -1,4 +1,5 @@
 import type { Structure } from './structures';
+import { calculateInBrowser } from './open-engine';
 export type EngineConnection = { url: string; token: string };
 export async function discoverLocalEngine(
   port = 8765,
@@ -64,10 +65,11 @@ async function ensureStructure(connection: EngineConnection, s: Structure) {
   return pending;
 }
 export async function calculateInteractions(
-  connection: EngineConnection,
+  connection: EngineConnection | null,
   protein: Structure,
   ligand: Structure,
 ): Promise<InteractionResult> {
+  if (!connection) return calculateInBrowser(protein, ligand);
   await ensureStructure(connection, protein);
   await ensureStructure(connection, ligand);
   return engineRequest(

@@ -29,6 +29,7 @@ export type Mol = InputRow & {
   centerSimilarity: number;
   x: number;
   y: number;
+  z?: number;
 };
 export type Cluster = {
   id: number;

@@ -1,8 +1,10 @@
 import type { Structure, StructureAtom } from './structures';
 import type { InteractionResult, Interaction } from './local-engine';
+import { structureIdentity } from './structure-id';
 
 export const interactionKinds: Record<string, [string, string]> = {
   hbond: ['氢键', '#1783bd'],
+  hbond_candidate: ['氢键候选（缺氢）', '#8bb7cc'],
   halogen: ['卤键', '#9861c7'],
   salt: ['盐桥', '#e35959'],
   pipi: ['π–π', '#d49422'],
@@ -19,9 +21,13 @@ export function endpointResidue(p: Interaction['a']) {
 export function interactionKey(
   protein: Structure | null | undefined,
   ligand: Structure | null | undefined,
+  method: 'native' | 'open' = 'native',
 ) {
-  return protein?.nativeId && ligand?.nativeId
-    ? protein.nativeId + '|' + ligand.nativeId
+  return protein && ligand
+    ? structureIdentity(protein) +
+        '|' +
+        structureIdentity(ligand) +
+        (method === 'open' ? '|open-v1' : '')
     : '';
 }
 export type InteractionState = 'yes' | 'no' | 'unknown';
@@ -33,7 +39,9 @@ export function residueInteractionState(
 ): InteractionState {
   if (!result) return 'unknown';
   const pairs = result.pairs.filter(
-    (p) => p.type !== 'contact' && (kind === 'all' || p.type === kind),
+    (p) =>
+      !['contact', 'hbond_candidate'].includes(p.type) &&
+      (kind === 'all' || p.type === kind),
   );
   const hits = residues.map((residue) =>
     pairs.some((p) => endpointResidue(p.a) === residue),
